@@ -11,6 +11,7 @@ import {
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
+import { QualityNav } from "./module-navs";
 import { useApiRecovery } from "../lib/use-api-recovery";
 import { useLatestRequest } from "../lib/use-latest-request";
 
@@ -50,7 +51,7 @@ function PageHero({ kicker, title, subtitle, actions }: { kicker: string; title:
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
             {kicker}
           </p>
-          <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
+          <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
           <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink/55">{subtitle}</p>
         </div>
         {actions && <div className="flex flex-wrap items-start gap-2 pt-1">{actions}</div>}
@@ -83,7 +84,7 @@ function KpiCard({ label, value, Icon, color, sub }: { label: string; value: str
         <span className={`mt-1 h-2 w-2 rounded-full ${s.dot}`} />
       </div>
       <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-ink/45">{label}</p>
-      <strong className="mt-1 block text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
+      <strong className="mt-1 block font-display tabular-nums text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
       {sub && <p className="mt-1 text-xs text-ink/45">{sub}</p>}
     </article>
   );
@@ -106,53 +107,6 @@ function CheckTypeBadge({ checkType }: { checkType: string }) {
   );
 }
 
-const qualityNav = [
-  { href: "/quality",                                    label: "Dashboard" },
-  { href: "/quality/templates",                         label: "Templates" },
-  { href: "/quality/checks",                            label: "All Checks" },
-  { href: "/quality/checks?checkType=RAW_MATERIAL",     label: "Raw Material" },
-  { href: "/quality/checks?checkType=FEED_PRODUCTION",  label: "Feed Quality" },
-  { href: "/quality/checks?checkType=SOYA_PROCESSING",  label: "Soya Quality" },
-  { href: "/quality/checks?checkType=FINISHED_GOODS",   label: "Finished Goods" },
-  { href: "/quality/checks?checkType=GOODS_RECEIVED",   label: "GRN Checks" },
-  { href: "/quality/checks?checkType=POULTRY_HEALTH",   label: "Poultry Health" },
-  { href: "/quality/rejected-batches",                  label: "Rejected" },
-  { href: "/quality/approved-batches",                  label: "Approved" },
-  { href: "/quality/lab-reports",                       label: "Lab Reports" },
-  { href: "/quality/corrective-actions",                label: "Corrective Actions" },
-  { href: "/quality/reports",                           label: "Reports" },
-];
-
-function QualityNav({ checkType }: { checkType?: string } = {}) {
-  const pathname = usePathname();
-  return (
-    <div className="mb-6 flex flex-wrap gap-1.5">
-      {qualityNav.map((n) => {
-        const [basePath, queryStr] = n.href.split("?");
-        const navCheckType = queryStr ? (new URLSearchParams(queryStr).get("checkType") ?? undefined) : undefined;
-        const isActive =
-          basePath === "/quality/checks"
-            ? pathname === "/quality/checks" && navCheckType === (checkType || undefined)
-            : basePath === "/quality"
-              ? pathname === "/quality"
-              : pathname === basePath || (pathname?.startsWith(basePath + "/") ?? false);
-        return (
-          <Link
-            key={n.href}
-            href={n.href}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-              isActive
-                ? "border-brand/30 bg-brand text-white"
-                : "border-line bg-white text-ink/70 hover:border-brand/20 hover:bg-field hover:text-ink"
-            }`}
-          >
-            {n.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
 
 const inputCls = "min-h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
 const labelCls = "mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-ink/45";
@@ -291,7 +245,7 @@ export function QualityDashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Overall Pass Rate</p>
-              <p className="mt-1 text-3xl font-extrabold tracking-tight text-ink">{passRate.toFixed(1)}%</p>
+              <p className="mt-1 font-display tabular-nums text-3xl font-extrabold tracking-tight text-ink">{passRate.toFixed(1)}%</p>
             </div>
             <div className={`flex h-14 w-14 items-center justify-center rounded-full text-sm font-bold ${passRate >= 90 ? "bg-emerald-100 text-emerald-700" : passRate >= 70 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
               {passRate >= 90 ? "A" : passRate >= 70 ? "B" : "C"}
@@ -314,7 +268,7 @@ export function QualityDashboardPage() {
           <Link
             key={type}
             href={`/quality/checks?checkType=${type}`}
-            className="flex items-center justify-between gap-2 rounded-xl border border-line bg-white px-4 py-3 text-xs font-semibold text-ink/70 shadow-card transition hover:border-brand/30 hover:bg-field hover:text-ink"
+            className="flex items-center justify-between gap-2 app-card px-4 py-3 text-xs font-semibold text-ink/70 shadow-card transition hover:border-brand/30 hover:bg-field hover:text-ink"
           >
             <span>{CHECK_TYPE_LABELS[type]}</span>
             <ChevronRight className="h-3.5 w-3.5 text-ink/30" />
@@ -1018,7 +972,7 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
                 Operations · Quality Control
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <h1 className="text-[26px] font-extrabold leading-tight tracking-tight text-ink">{check.reference}</h1>
+                <h1 className="font-display tabular-nums text-[26px] font-extrabold leading-tight tracking-tight text-ink">{check.reference}</h1>
                 <CheckTypeBadge checkType={check.checkType} />
                 <StatusBadge status={check.status} />
                 {check.decision && check.decision !== "PENDING" && <StatusBadge status={check.decision} />}
@@ -1913,11 +1867,11 @@ export function QualityReportsPage() {
       <div className="mb-6 flex flex-wrap items-end gap-4 rounded-2xl border border-line bg-white p-5 shadow-card">
         <div>
           <label className={labelCls}>Date From</label>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="min-h-10 rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10" />
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="min-h-10 app-control focus:ring-4 focus:ring-brand/10" />
         </div>
         <div>
           <label className={labelCls}>Date To</label>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="min-h-10 rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10" />
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="min-h-10 app-control focus:ring-4 focus:ring-brand/10" />
         </div>
         <button onClick={() => load(dateFrom, dateTo)} disabled={loading} className="app-button-primary disabled:opacity-50">
           {loading ? "Loading..." : "Apply"}

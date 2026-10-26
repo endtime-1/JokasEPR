@@ -85,7 +85,7 @@ const DEFAULT_SETTINGS: SettingsMap = {
   "sales.settings": { requirePaymentBeforeRelease: false }
 };
 
-const inputClass = "min-h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
+const inputClass = "min-h-10 app-control";
 
 function bool(value: unknown) {
   return Boolean(value);
@@ -346,10 +346,10 @@ export default function SettingsPage() {
       <div className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">System Settings</h1>
+            <h1 className="font-display tabular-nums text-2xl font-bold">System Settings</h1>
             <p className="mt-1 max-w-3xl text-sm text-ink/60">Company profile, sites, master data, numbering, notifications, AI, backup, and access controls.</p>
           </div>
-          <span className="rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white">Admin configuration</span>
+          <span className="app-button-primary">Admin configuration</span>
         </div>
 
         {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -408,7 +408,7 @@ export default function SettingsPage() {
         {/* Product Catalog shortcut */}
         <Link
           href="/settings/catalog"
-          className="flex items-center justify-between rounded-xl border border-line bg-white p-5 shadow-panel transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-soft"
+          className="flex items-center justify-between app-card p-5 shadow-panel transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-soft"
         >
           <div className="flex items-center gap-4">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50">
@@ -441,7 +441,7 @@ export default function SettingsPage() {
               const labels: Record<string, string> = { branches: "Branches", farms: "Farms", warehouses: "Warehouses", "production-sites": "Production Sites" };
               return (
                 <button key={key} type="button" onClick={() => { setActiveMaster(key); setEditingRow(null); setForm(TAB_DEFAULTS[key] ?? {}); setMasterMsg(null); }} className={`rounded-lg border p-3 text-left transition hover:border-brand/40 ${activeMaster === key ? "border-brand bg-brand/5" : "border-line bg-field"}`}>
-                  <span className={`text-2xl font-bold tabular-nums ${activeMaster === key ? "text-brand" : "text-ink"}`}>{count}</span>
+                  <span className={`font-display tabular-nums text-2xl font-bold tabular-nums ${activeMaster === key ? "text-brand" : "text-ink"}`}>{count}</span>
                   <p className="mt-0.5 text-xs text-ink/55">{labels[key]}</p>
                 </button>
               );

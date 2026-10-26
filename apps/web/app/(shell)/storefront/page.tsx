@@ -174,7 +174,7 @@ export default function StorefrontDashboard() {
             <ChartBar className="h-5 w-5 text-brand" />
           </div>
           <div>
-            <p className="text-2xl font-black text-ink">
+            <p className="font-display tabular-nums text-2xl font-black text-ink">
               {loading ? skel("w-20") : <>GHS {fmt(stats?.revenueThisMonth ?? 0)}</>}
             </p>
             <p className="text-xs text-ink/50">Revenue this month</p>
@@ -193,7 +193,7 @@ export default function StorefrontDashboard() {
             <Clock className="h-5 w-5 text-amber-600" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-2xl font-black text-ink">
+            <p className="font-display tabular-nums text-2xl font-black text-ink">
               {loading ? skel() : stats?.pending ?? 0}
             </p>
             <p className="text-xs text-ink/50">Pending orders</p>
@@ -210,7 +210,7 @@ export default function StorefrontDashboard() {
             <CircleCheckBig className="h-5 w-5 text-blue-600" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-2xl font-black text-ink">
+            <p className="font-display tabular-nums text-2xl font-black text-ink">
               {loading ? skel() : stats?.confirmed ?? 0}
             </p>
             <p className="text-xs text-ink/50">Confirmed orders</p>
@@ -227,7 +227,7 @@ export default function StorefrontDashboard() {
             <Package className="h-5 w-5 text-emerald-600" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-2xl font-black text-ink">
+            <p className="font-display tabular-nums text-2xl font-black text-ink">
               {loading ? skel() : <>{stats?.published ?? 0} <span className="text-sm font-medium text-ink/35">/ {stats?.totalProducts ?? 0}</span></>}
             </p>
             <p className="text-xs text-ink/50">Products published</p>

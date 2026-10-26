@@ -13,6 +13,7 @@ import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidate
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
+import { ProcurementNav } from "./module-navs";
 import { useApiRecovery } from "../lib/use-api-recovery";
 import { useLatestRequest } from "../lib/use-latest-request";
 
@@ -91,7 +92,7 @@ function PageHero({
       <div className="relative flex flex-wrap items-start justify-between gap-4">
         <div>
           {kicker && <p className="app-kicker mb-1">{kicker}</p>}
-          <h1 className="text-2xl font-extrabold tracking-tight text-ink">{title}</h1>
+          <h1 className="font-display tabular-nums text-2xl font-extrabold tracking-tight text-ink">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-ink/55">{subtitle}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -123,7 +124,7 @@ function KpiCard({
         <div className={`rounded-xl p-2.5 ${s.icon}`}><Icon className="h-5 w-5" /></div>
         <div className={`mt-1 h-2 w-2 rounded-full ${s.dot}`} />
       </div>
-      <p className="mt-4 text-2xl font-extrabold tracking-tight text-ink">{value}</p>
+      <p className="mt-4 font-display tabular-nums text-2xl font-extrabold tracking-tight text-ink">{value}</p>
       <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-ink/45">{label}</p>
       {sub && <p className="mt-1 text-xs text-ink/50">{sub}</p>}
     </div>
@@ -132,45 +133,6 @@ function KpiCard({
 
 // ─── Nav ──────────────────────────────────────────────────────────────────────
 
-const procurementNavLinks = [
-  { href: "/procurement",                     label: "Dashboard",    Icon: ChartBar },
-  { href: "/procurement/suppliers",           label: "Suppliers",    Icon: Building2 },
-  { href: "/procurement/supplier-categories", label: "Categories",   Icon: Tag },
-  { href: "/procurement/purchase-requests",   label: "Requests",     Icon: ClipboardList },
-  { href: "/procurement/purchase-orders",     label: "Orders",       Icon: ShoppingCart },
-  { href: "/procurement/grns",                label: "GRNs",         Icon: Package },
-  { href: "/procurement/invoices",            label: "Invoices",     Icon: FileText },
-  { href: "/procurement/payments",            label: "Payments",     Icon: Wallet },
-  { href: "/procurement/performance",         label: "Performance",  Icon: Star },
-  { href: "/procurement/price-history",       label: "Price History", Icon: DollarSign },
-];
-
-function ProcurementNav() {
-  const pathname = usePathname();
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {procurementNavLinks.map((n) => {
-        const active =
-          pathname === n.href ||
-          (n.href !== "/procurement" && pathname.startsWith(n.href));
-        return (
-          <Link
-            key={n.href}
-            href={n.href}
-            className={`flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-              active
-                ? "border-brand/30 bg-brand/10 text-brand"
-                : "border-line bg-white text-ink/60 hover:border-brand/20 hover:bg-field hover:text-ink"
-            }`}
-          >
-            <n.Icon className="h-3.5 w-3.5" />
-            {n.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
 
 // ─── Options hook ─────────────────────────────────────────────────────────────
 
@@ -676,7 +638,7 @@ export function SuppliersPage() {
                     <button
                       type="button"
                       onClick={() => startEdit(r as unknown as Supplier)}
-                      className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                      className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                     >
                       <Pencil className="h-3 w-3" /> Edit
                     </button>
@@ -2186,7 +2148,7 @@ export function CreatePurchaseOrderPage() {
             <div className="flex justify-end border-t border-line px-6 py-4">
               <div className="text-right">
                 <p className="text-xs uppercase font-bold tracking-wide text-ink/45">Order Total</p>
-                <p className="text-2xl font-extrabold text-ink">{money(subtotal)}</p>
+                <p className="font-display tabular-nums text-2xl font-extrabold text-ink">{money(subtotal)}</p>
               </div>
             </div>
           </div>
@@ -2438,7 +2400,7 @@ export function PurchaseOrderDetailsPage() {
               <div className="flex justify-end border-t border-line px-6 py-4">
                 <div className="text-right">
                   <p className="text-xs uppercase font-bold tracking-wide text-ink/45">Order Total</p>
-                  <p className="text-2xl font-extrabold text-ink">{money(editSubtotal)}</p>
+                  <p className="font-display tabular-nums text-2xl font-extrabold text-ink">{money(editSubtotal)}</p>
                 </div>
               </div>
             </div>

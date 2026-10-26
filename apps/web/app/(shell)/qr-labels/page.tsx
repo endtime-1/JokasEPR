@@ -34,7 +34,7 @@ export default function QrLabelsPage() {
                 <span className="h-1.5 w-1.5 rounded-full bg-brand" />
                 Operations · Traceability
               </p>
-              <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+              <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">
                 QR &amp; Barcode Labels
               </h1>
               <p className="mt-1.5 text-sm leading-relaxed text-ink/55">

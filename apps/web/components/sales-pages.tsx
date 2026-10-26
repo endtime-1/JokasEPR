@@ -12,6 +12,7 @@ import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCa
 import { groupByFeedForm } from "../lib/feed";
 import { DataTable } from "./data-table";
 import { ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
+import { SalesNav } from "./module-navs";
 import { useApiRecovery } from "../lib/use-api-recovery";
 import { useLatestRequest } from "../lib/use-latest-request";
 
@@ -37,7 +38,7 @@ function PageHero({ kicker, title, subtitle, actions }: { kicker: string; title:
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
             {kicker}
           </p>
-          <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
+          <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
           <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink/55">{subtitle}</p>
         </div>
         {actions && <div className="flex flex-wrap items-start gap-2 pt-1">{actions}</div>}
@@ -70,56 +71,12 @@ function KpiCard({ label, value, Icon, color, sub }: { label: string; value: str
         <span className={`mt-1 h-2 w-2 rounded-full ${s.dot}`} />
       </div>
       <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-ink/45">{label}</p>
-      <strong className="mt-1 block text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
+      <strong className="mt-1 block font-display tabular-nums text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
       {sub && <p className="mt-1 text-xs text-ink/45">{sub}</p>}
     </article>
   );
 }
 
-const salesNavLinks = [
-  { href: "/sales",               label: "Dashboard" },
-  { href: "/sales/customers",     label: "Customers" },
-  { href: "/sales/customer-groups", label: "Customer Groups" },
-  { href: "/sales/quotes",        label: "Quotes" },
-  { href: "/sales/orders",        label: "Orders" },
-  { href: "/sales/invoices",      label: "Invoices" },
-  { href: "/sales/payments",      label: "Payments" },
-  { href: "/sales/receipts",      label: "Receipts" },
-  { href: "/sales/returns",       label: "Returns" },
-  { href: "/sales/debtors",       label: "Debtors" },
-  { href: "/sales/delivery-notes",label: "Delivery Notes" },
-  { href: "/sales/statements",    label: "Statements" },
-  { href: "/sales/price-lists",   label: "Price Lists" },
-  { href: "/sales/field-visits",  label: "Field Visits" },
-  { href: "/sales/reports",       label: "Reports" },
-];
-
-export function SalesNav() {
-  const pathname = usePathname();
-  return (
-    <div className="mb-6 flex flex-wrap gap-1.5">
-      {salesNavLinks.map((n) => {
-        const isActive =
-          n.href === "/sales"
-            ? pathname === "/sales"
-            : pathname === n.href || (pathname?.startsWith(n.href + "/") ?? false);
-        return (
-          <Link
-            key={n.href}
-            href={n.href}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-              isActive
-                ? "border-brand/30 bg-brand text-white"
-                : "border-line bg-white text-ink/70 hover:border-brand/20 hover:bg-field hover:text-ink"
-            }`}
-          >
-            {n.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
 
 const inputCls = "min-h-10 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
 const labelCls = "mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-ink/45";
@@ -273,7 +230,7 @@ export function SalesDashboardPage() {
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
               Commercial · Sales
             </p>
-            <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">Sales Dashboard</h1>
+            <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">Sales Dashboard</h1>
             <p className="mt-1 text-sm text-ink/45">{today}</p>
           </div>
           <div className="flex flex-wrap items-start gap-2 pt-1">
@@ -376,7 +333,7 @@ export function SalesDashboardPage() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Pending Approvals</p>
-            <p className="mt-0.5 text-2xl font-extrabold text-ink">{data?.pendingStockApprovals ?? 0}</p>
+            <p className="mt-0.5 font-display tabular-nums text-2xl font-extrabold text-ink">{data?.pendingStockApprovals ?? 0}</p>
             <p className="text-xs text-ink/45">orders awaiting stock release</p>
           </div>
           <Link href="/sales/orders?status=PENDING_STOCK_APPROVAL" className="shrink-0">
@@ -390,7 +347,7 @@ export function SalesDashboardPage() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Fulfilled Orders</p>
-            <p className="mt-0.5 text-2xl font-extrabold text-ink">{data?.fulfilledOrders ?? 0}</p>
+            <p className="mt-0.5 font-display tabular-nums text-2xl font-extrabold text-ink">{data?.fulfilledOrders ?? 0}</p>
             <p className="text-xs text-ink/45">completed with invoices &amp; delivery notes</p>
           </div>
           <Link href="/sales/orders?status=FULFILLED" className="shrink-0">
@@ -843,7 +800,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
               Commercial · Sales · Customer
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h1 className="text-[26px] font-extrabold tracking-tight text-ink">{cust.name}</h1>
+              <h1 className="font-display tabular-nums text-[26px] font-extrabold tracking-tight text-ink">{cust.name}</h1>
               <StatusBadge status={cust.status} />
             </div>
             <p className="mt-1 text-sm text-ink/55">
@@ -2040,11 +1997,11 @@ export function SalesReportsPage() {
       <div className="mb-6 flex flex-wrap items-end gap-4 rounded-2xl border border-line bg-white p-5 shadow-card">
         <div>
           <label className={labelCls2}>Date From</label>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="min-h-10 rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10" />
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="min-h-10 app-control focus:ring-4 focus:ring-brand/10" />
         </div>
         <div>
           <label className={labelCls2}>Date To</label>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="min-h-10 rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10" />
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="min-h-10 app-control focus:ring-4 focus:ring-brand/10" />
         </div>
         <button onClick={() => load(dateFrom, dateTo)} disabled={loading} className="app-button-primary disabled:opacity-50">
           {loading ? <><RefreshCw className="h-4 w-4 animate-spin" /> Loading…</> : "Generate Report"}
@@ -2185,8 +2142,8 @@ export function PriceListsPage() {
     finally { setDeleting(false); }
   }
 
-  const selectCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
-  const inputCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
+  const selectCls = "min-h-10 w-full app-control";
+  const inputCls = "min-h-10 w-full app-control";
 
   return (
     <>
@@ -2198,7 +2155,7 @@ export function PriceListsPage() {
       />
       <SalesNav />
       {showForm && (
-        <form onSubmit={submit} className="mb-6 grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-3">
+        <form onSubmit={submit} className="mb-6 grid gap-4 app-card p-5 shadow-panel md:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-bold text-ink/60">Product *</label>
             <select value={form.productId} onChange={f("productId")} className={selectCls} required>
@@ -2419,8 +2376,8 @@ export function CustomerGroupsPage() {
     finally { setDeleting(false); }
   }
 
-  const selectCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
-  const groupInputCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
+  const selectCls = "min-h-10 w-full app-control";
+  const groupInputCls = "min-h-10 w-full app-control";
 
   return (
     <>
@@ -2433,7 +2390,7 @@ export function CustomerGroupsPage() {
       <SalesNav />
 
       {showForm && (
-        <form onSubmit={submit} className="mb-6 grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-3">
+        <form onSubmit={submit} className="mb-6 grid gap-4 app-card p-5 shadow-panel md:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-bold text-ink/60">Branch *</label>
             <select value={form.branchId || opts.branches[0]?.id || ""} onChange={f("branchId")} className={selectCls} required>
@@ -2523,3 +2480,5 @@ export function CustomerGroupsPage() {
     </>
   );
 }
+
+export { SalesNav };

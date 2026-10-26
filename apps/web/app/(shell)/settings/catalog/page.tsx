@@ -127,7 +127,7 @@ function StatCard({
         <Icon className="h-5 w-5" />
       </div>
       <div>
-        <p className="text-2xl font-bold text-ink">{value.toLocaleString()}</p>
+        <p className="font-display tabular-nums text-2xl font-bold text-ink">{value.toLocaleString()}</p>
         <p className="text-xs text-ink/50">{label}</p>
       </div>
     </div>
@@ -324,7 +324,7 @@ export default function ProductCatalogPage() {
               </Link>
             </div>
             <p className="app-kicker">Product Management</p>
-            <h1 className="mt-0.5 text-2xl font-bold text-ink">Product Catalog</h1>
+            <h1 className="mt-0.5 font-display tabular-nums text-2xl font-bold text-ink">Product Catalog</h1>
             <p className="mt-1 max-w-2xl text-sm text-ink/55">
               Manage raw materials (ingredients), finished goods, and consumables used across the feed mill, poultry, and soya operations.
             </p>

@@ -200,7 +200,7 @@ export default function RolesPage() {
         </div>
         <button
           type="button"
-          className={showCreate ? "inline-flex min-h-10 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" : "inline-flex min-h-10 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white"}
+          className={showCreate ? "inline-flex min-h-10 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" : "inline-flex min-h-10 items-center gap-2 app-button-primary"}
           onClick={() => setShowCreate((p) => !p)}
         >
           {showCreate ? "Cancel" : <><Plus className="h-4 w-4" /> New role</>}
@@ -231,7 +231,7 @@ export default function RolesPage() {
           />
 
           {submitError && <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
-          <button type="submit" disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+          <button type="submit" disabled={saving} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-50">
             <ShieldCheck className="h-4 w-4" />
             {saving ? "Creating…" : "Create role"}
           </button>
@@ -263,7 +263,7 @@ export default function RolesPage() {
                   <button
                     type="button"
                     onClick={() => startEdit(role)}
-                    className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                    className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                   >
                     <Pencil className="h-3 w-3" /> Edit
                   </button>
@@ -303,7 +303,7 @@ export default function RolesPage() {
           {editError && <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
           <div className="flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRole(null)} disabled={savingEdit}>Cancel</button>
-            <button type="submit" disabled={savingEdit} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={savingEdit} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-50">
               <ShieldCheck className="h-4 w-4" />
               {savingEdit ? "Saving…" : "Save changes"}
             </button>

@@ -123,7 +123,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
             <span className="h-1.5 w-1.5 rounded-full bg-brand" />
             Operations · Maintenance
           </p>
-          <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
+          <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-ink/55">{subtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -166,7 +166,7 @@ function KpiCard({ label, value, Icon, color, sub }: { label: string; value: str
         <span className={`mt-1 h-2 w-2 rounded-full ${s.dot}`} />
       </div>
       <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-ink/45">{label}</p>
-      <strong className="mt-1 block text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
+      <strong className="mt-1 block font-display tabular-nums text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
       {sub && <p className="mt-1 text-xs text-ink/45">{sub}</p>}
     </article>
   );
@@ -241,7 +241,7 @@ export function MaintenanceDashboardPage() {
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
               Operations · Maintenance
             </p>
-            <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+            <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">
               Maintenance Dashboard
             </h1>
             <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-ink/55">
@@ -607,12 +607,12 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
           <TextField label="Serial number" value={form.serialNumber} onChange={(value) => setForm({ ...form, serialNumber: value })} />
           <TextField label="Capacity" value={form.capacity} onChange={(value) => setForm({ ...form, capacity: value })} />
           <TextField label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} />
-          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-4">
             <Save aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save machine"}
           </button>
           {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
         </form>
-      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/maintenance/machines/create"><Plus aria-hidden className="h-4 w-4" /> Create machine</Link>}
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/maintenance/machines/create"><Plus aria-hidden className="h-4 w-4" /> Create machine</Link>}
       <DataTable
         rows={rows}
         loading={loading}
@@ -633,7 +633,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -662,7 +662,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
           <TextField label="Location" value={editForm.location} onChange={(value) => setEditForm({ ...editForm, location: value })} />
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -881,12 +881,12 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
           <FormField label="Type"><select className={inputClass} value={form.equipmentType} onChange={(event) => setForm({ ...form, equipmentType: event.target.value })}>{EQUIPMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
           <TextField label="Serial number" value={form.serialNumber} onChange={(value) => setForm({ ...form, serialNumber: value })} />
           <TextField label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} />
-          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-4">
             <Save aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save equipment"}
           </button>
           {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
         </form>
-      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/maintenance/equipment/create"><Plus aria-hidden className="h-4 w-4" /> Register equipment</Link>}
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/maintenance/equipment/create"><Plus aria-hidden className="h-4 w-4" /> Register equipment</Link>}
       <DataTable
         rows={rows}
         loading={loading}
@@ -906,7 +906,7 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -933,7 +933,7 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
           <TextField label="Location" value={editForm.location} onChange={(value) => setEditForm({ ...editForm, location: value })} />
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -1148,7 +1148,7 @@ export function AssignmentsPage() {
         <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
         <TextField label="Due date" type="date" value={form.dueDate} onChange={(value) => setForm({ ...form, dueDate: value })} />
         <TextField label="Notes" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-4">
           {submitting ? "Assigning…" : "Assign technician"}
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
@@ -1171,7 +1171,7 @@ export function AssignmentsPage() {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -1197,7 +1197,7 @@ export function AssignmentsPage() {
           <div className="sm:col-span-2"><TextField label="Notes" value={editForm.notes} onChange={(value) => setEditForm({ ...editForm, notes: value })} /></div>
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -1329,7 +1329,7 @@ export function DowntimePage() {
         <TextField label="Ended at" type="datetime-local" value={form.endAt} onChange={(value) => setForm({ ...form, endAt: value })} />
         <TextField label="Reason" value={form.reason} onChange={(value) => setForm({ ...form, reason: value })} required />
         <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{DOWNTIME_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></FormField>
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-4">
           {submitting ? "Logging…" : "Log downtime"}
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
@@ -1353,7 +1353,7 @@ export function DowntimePage() {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -1378,7 +1378,7 @@ export function DowntimePage() {
           <div className="sm:col-span-2"><TextField label="Reason" value={editForm.reason} onChange={(value) => setEditForm({ ...editForm, reason: value })} required /></div>
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -1510,7 +1510,7 @@ export function RecordsPage() {
         <TextField label="Next due date" type="date" value={form.nextDueDate} onChange={(value) => setForm({ ...form, nextDueDate: value })} />
         <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} required />
         <TextField label="Findings" value={form.findings} onChange={(value) => setForm({ ...form, findings: value })} />
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-4">
           {submitting ? "Logging…" : "Log work done"}
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
@@ -1535,7 +1535,7 @@ export function RecordsPage() {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -1561,7 +1561,7 @@ export function RecordsPage() {
           <div className="sm:col-span-2"><TextField label="Findings" value={editForm.findings} onChange={(value) => setEditForm({ ...editForm, findings: value })} /></div>
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -1702,7 +1702,7 @@ export function DocumentsPage() {
         <TextField label="Issue date" type="date" value={form.issueDate} onChange={(value) => setForm({ ...form, issueDate: value })} />
         <TextField label="Expiry date" type="date" value={form.expiryDate} onChange={(value) => setForm({ ...form, expiryDate: value })} required />
         <TextField label="Notes" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-4">
           {submitting ? "Saving…" : "Save document"}
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
@@ -1734,7 +1734,7 @@ export function DocumentsPage() {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -1761,7 +1761,7 @@ export function DocumentsPage() {
           <div className="sm:col-span-2"><TextField label="Notes" value={editForm.notes} onChange={(value) => setEditForm({ ...editForm, notes: value })} /></div>
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -1903,7 +1903,7 @@ export function SchedulePage() {
         <TextField label="Frequency days" type="number" value={form.frequencyDays} onChange={(value) => setForm({ ...form, frequencyDays: value })} required />
         <TextField label="Next due date" type="date" value={form.nextDueDate} onChange={(value) => setForm({ ...form, nextDueDate: value })} required />
         <TextField label="Instructions" value={form.instructions} onChange={(value) => setForm({ ...form, instructions: value })} />
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-4">
         {submitting ? "Saving…" : "Save schedule"}
       </button>
       {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
@@ -1928,7 +1928,7 @@ export function SchedulePage() {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -1956,7 +1956,7 @@ export function SchedulePage() {
           <div className="sm:col-span-2"><TextField label="Instructions" value={editForm.instructions} onChange={(value) => setEditForm({ ...editForm, instructions: value })} /></div>
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>
@@ -2044,7 +2044,7 @@ export function BreakdownPage() {
         <FormField label="Severity"><select className={inputClass} value={form.severity} onChange={(event) => setForm({ ...form, severity: event.target.value })}><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></FormField>
         <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} required />
         <TextField label="Root cause" value={form.rootCause} onChange={(value) => setForm({ ...form, rootCause: value })} />
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-4">
           {submitting ? "Reporting…" : "Report breakdown"}
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
@@ -2130,7 +2130,7 @@ export function SparePartsPage() {
         <TextField label="Quantity" type="number" value={form.quantity} onChange={(value) => setForm({ ...form, quantity: value })} required />
         <TextField label="Unit cost" type="number" value={form.unitCost} onChange={(value) => setForm({ ...form, unitCost: value })} />
         <TextField label="Notes" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-3">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-3">
           {submitting ? "Issuing…" : "Issue spare part"}
         </button>
         {submitError && <p className="col-span-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
@@ -2250,12 +2250,12 @@ export function MaintenanceCostReportPage() {
         <TextField label="Amount (GHS)" type="number" value={form.amount} onChange={(value) => setForm({ ...form, amount: value })} required />
         <TextField label="Cost date" type="date" value={form.costDate} onChange={(value) => setForm({ ...form, costDate: value })} />
         <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} />
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center app-button-primary disabled:opacity-60 md:col-span-4">
           {submitting ? "Recording…" : "Record cost"}
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <button className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/maintenance/reports/costs.csv", "maintenance-costs.csv")}>
+      <button className="mb-6 inline-flex min-h-11 items-center gap-2 app-button-primary" onClick={() => downloadReport("/maintenance/reports/costs.csv", "maintenance-costs.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download maintenance costs CSV
       </button>
       <DataTable
@@ -2277,7 +2277,7 @@ export function MaintenanceCostReportPage() {
                 <button
                   type="button"
                   onClick={() => startEdit(row)}
-                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                  className="inline-flex items-center gap-1 app-button-secondary !min-h-8 px-2.5 text-xs"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -2304,7 +2304,7 @@ export function MaintenanceCostReportPage() {
           <div className="sm:col-span-2"><TextField label="Description" value={editForm.description} onChange={(value) => setEditForm({ ...editForm, description: value })} /></div>
           <div className="col-span-2 flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
-            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               {savingEdit ? "Saving…" : "Save changes"}
             </button>
           </div>

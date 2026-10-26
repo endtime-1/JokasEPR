@@ -182,7 +182,7 @@ export default function ReportsPage() {
               <span className="h-1.5 w-1.5 rounded-full bg-brand" />
               Analytics
             </p>
-            <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+            <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">
               Reporting & Analytics
             </h1>
             <p className="mt-1.5 text-sm leading-relaxed text-ink/55">

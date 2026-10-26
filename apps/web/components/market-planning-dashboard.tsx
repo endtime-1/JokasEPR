@@ -105,7 +105,7 @@ function KpiCard({
         </span>
         <span className={`h-2 w-2 rounded-full ${s.dot} mt-0.5 opacity-70`} />
       </div>
-      <strong className={`mt-4 block text-[26px] font-extrabold leading-none tracking-tight ${s.val}`}>
+      <strong className={`mt-4 block font-display tabular-nums text-[26px] font-extrabold leading-none tracking-tight ${s.val}`}>
         {value}
       </strong>
       <p className="mt-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink/50 leading-snug">{label}</p>
@@ -172,7 +172,7 @@ function TargetAchievementGauge({ pct }: { pct: number }) {
   return (
     <div className="app-card p-4">
       <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink/40">Target Achievement</p>
-      <p className={`text-[28px] font-extrabold leading-none tracking-tight ${color}`}>{fmt(pct, 1)}%</p>
+      <p className={`font-display tabular-nums text-[28px] font-extrabold leading-none tracking-tight ${color}`}>{fmt(pct, 1)}%</p>
       <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-line">
         <div className={`h-full rounded-full transition-all duration-700 ${barColor}`} style={{ width: `${capped}%` }} />
       </div>
@@ -189,7 +189,7 @@ function MaterialCoverage({ required, available }: { required: number; available
   return (
     <div className="app-card p-4">
       <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink/40">Raw Material Coverage</p>
-      <p className={`text-[28px] font-extrabold leading-none tracking-tight ${textColor}`}>
+      <p className={`font-display tabular-nums text-[28px] font-extrabold leading-none tracking-tight ${textColor}`}>
         {fmt(Math.min(pct, 100), 1)}%
       </p>
       <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-line">
@@ -352,7 +352,7 @@ export function MarketPlanningDashboardPage() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
               Operations · Market Planning
             </p>
-            <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+            <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">
               Market-Led Production Planning
             </h1>
             <p className="mt-1.5 text-sm leading-relaxed text-ink/55">

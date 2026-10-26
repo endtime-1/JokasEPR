@@ -428,7 +428,7 @@ export default function AlertsPage() {
                 <span className="h-1.5 w-1.5 rounded-full bg-brand" />
                 AI decision support
               </p>
-              <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+              <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">
                 Alerts & Forecasting
               </h1>
               <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink/55">
@@ -512,7 +512,7 @@ export default function AlertsPage() {
               <div className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${iconStyle}`}>
                 <Icon aria-hidden className="h-5 w-5" />
               </div>
-              <strong className={`mt-4 block text-[28px] font-extrabold leading-none ${valStyle}`}>
+              <strong className={`mt-4 block font-display tabular-nums text-[28px] font-extrabold leading-none ${valStyle}`}>
                 {value}
               </strong>
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-ink/45">
@@ -595,7 +595,7 @@ export default function AlertsPage() {
                       {CATEGORY_LABELS[forecast.category] ?? forecast.category}
                     </span>
                     <h3 className="mt-2.5 text-sm font-bold text-ink">{forecast.entityName}</h3>
-                    <p className="mt-1 text-2xl font-extrabold text-brand">
+                    <p className="mt-1 font-display tabular-nums text-2xl font-extrabold text-brand">
                       {formatForecast(forecast)}
                     </p>
                     <div className="mt-3">

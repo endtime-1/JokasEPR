@@ -177,7 +177,7 @@ export function EggSalesPage() {
           </p>
         )}
         <div className="md:col-span-3">
-          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit">
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60" type="submit">
             {submitting ? "Recording…" : "Record sale"}
           </button>
         </div>

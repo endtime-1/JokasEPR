@@ -79,7 +79,7 @@ export default function SetupPage() {
       <main className="grid min-h-screen place-items-center bg-field px-5">
         <div className="w-full max-w-[460px] rounded-2xl border border-line bg-white p-10 text-center shadow-panel">
           <CircleCheckBig className="mx-auto mb-4 h-14 w-14 text-green-500" />
-          <h2 className="text-2xl font-bold tracking-tight">Setup complete!</h2>
+          <h2 className="font-display tabular-nums text-2xl font-bold tracking-tight">Setup complete!</h2>
           <p className="mt-3 text-sm text-ink/60">
             Your admin account has been created. Redirecting to sign-in…
           </p>
@@ -97,7 +97,7 @@ export default function SetupPage() {
             <BrandLogo className="h-14 w-14 rounded-xl bg-white shadow-soft" />
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-white/75">AKOKO SOLUTIONS ERP</p>
-              <h1 className="text-2xl font-bold tracking-tight">First-time Setup</h1>
+              <h1 className="font-display tabular-nums text-2xl font-bold tracking-tight">First-time Setup</h1>
             </div>
           </div>
           <div className="mt-16 max-w-xl">
@@ -140,7 +140,7 @@ export default function SetupPage() {
               </span>
             </div>
             <p className="app-kicker">AKOKO SOLUTIONS ERP</p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight">Set up your workspace</h2>
+            <h2 className="mt-2 font-display tabular-nums text-3xl font-bold tracking-tight">Set up your workspace</h2>
             <p className="mt-2 text-sm leading-relaxed text-ink/60">
               Enter your company details and create the Super Admin account. This form is only shown once.
             </p>

@@ -254,10 +254,10 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
             <input className={inputClass} value={form.moisture} onChange={(event) => setForm({ ...form, moisture: event.target.value })} placeholder="e.g. 12.4, 12.8, 13.1" inputMode="decimal" />
             <span className="text-[11px] text-ink/45">One reading per sample from the truck, separated by commas. Leave blank if not tested yet; you can add readings later under Delivery analysis. Above the moisture limit the delivery is held until a manager accepts it.</span>
           </FormField>
-          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save intake"}</button>
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save intake"}</button>
           {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
         </form>
-      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/intakes/create"><Plus aria-hidden className="h-4 w-4" /> Create intake</Link>}
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/soya-processing/intakes/create"><Plus aria-hidden className="h-4 w-4" /> Create intake</Link>}
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
       <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
@@ -270,7 +270,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
           <FormField label="Received date"><input className={inputClass} type="date" value={editForm.receivedAt} onChange={(event) => setEditForm({ ...editForm, receivedAt: event.target.value })} /></FormField>
           <FormField label="Notes"><input className={inputClass} value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })} /></FormField>
           <div className="flex gap-3">
-            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
           </div>
         </form>
@@ -448,10 +448,10 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
             ["cakeProducedKg", "Cake produced kg"],
             ["wasteKg", "Waste kg"]
           ].map(([key, label]) => <FormField key={key} label={label}><input className={inputClass} type="number" value={form[key as keyof typeof form]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></FormField>)}
-          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save batch</button>
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save batch</button>
           {submitError && <p className="col-span-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</p>}
         </form>
-      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/batches/create"><Plus aria-hidden className="h-4 w-4" /> Create batch</Link>}
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/soya-processing/batches/create"><Plus aria-hidden className="h-4 w-4" /> Create batch</Link>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
       <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit batch">
@@ -461,7 +461,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           <FormField label="Processing date"><input className={inputClass} type="date" value={editForm.processingDate} onChange={(event) => setEditForm({ ...editForm, processingDate: event.target.value })} /></FormField>
           <FormField label="Notes"><input className={inputClass} value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })} /></FormField>
           <div className="flex gap-3">
-            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
           </div>
         </form>
@@ -758,7 +758,7 @@ export function SoyaQualityPage() {
         <FormField label="Oil purity %"><input className={inputClass} type="number" value={form.oilPurityPercent} onChange={(event) => setForm({ ...form, oilPurityPercent: event.target.value })} /></FormField>
         <FormField label="Cake protein %"><input className={inputClass} type="number" value={form.cakeProteinPercent} onChange={(event) => setForm({ ...form, cakeProteinPercent: event.target.value })} /></FormField>
         <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>APPROVED</option><option>ACCEPTED</option><option>REJECTED</option><option>PENDING</option></select></FormField>
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-5"><ShieldCheck aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save quality check"}</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-5"><ShieldCheck aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save quality check"}</button>
         {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-5">{submitError}</p>}
       </form>
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
@@ -773,7 +773,7 @@ export function SoyaQualityPage() {
           <FormField label="Cake protein %"><input className={inputClass} type="number" value={editForm.cakeProteinPercent} onChange={(event) => setEditForm({ ...editForm, cakeProteinPercent: event.target.value })} /></FormField>
           <FormField label="Notes"><input className={inputClass} value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })} /></FormField>
           <div className="flex gap-3">
-            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
           </div>
         </form>
@@ -810,7 +810,7 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
       <PageHeader title={type === "oil" ? "Soya Oil Stock" : "Soya Cake Stock"} subtitle="Production output stock by warehouse, batch, unit cost, and quantity." />
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white hover:bg-brand/90" href="/soya-processing/batches/create">
+        <Link className="inline-flex min-h-11 items-center gap-2 app-button-primary" href="/soya-processing/batches/create">
           <Plus aria-hidden className="h-4 w-4" /> Record new processing batch
         </Link>
         <p className="text-sm text-ink/55">
@@ -930,7 +930,7 @@ export function SoyaTransferPage() {
           </div>
           {inBags && Number(form.quantity) > 0 && <span className="text-[11px] text-ink/45">= {number(quantityBase)} kg (at {kgPerBag} kg/bag)</span>}
         </FormField>
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-5">{submitting ? "Creating…" : "Create transfer"}</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-5">{submitting ? "Creating…" : "Create transfer"}</button>
         {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-5">{submitError}</p>}
       </form>
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
@@ -941,7 +941,7 @@ export function SoyaTransferPage() {
           {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
           <FormField label="Notes"><input className={inputClass} value={editNotes} onChange={(event) => setEditNotes(event.target.value)} /></FormField>
           <div className="flex gap-3">
-            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
           </div>
         </form>
@@ -1055,10 +1055,10 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
           <FormField label="Customer"><input className={inputClass} value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} required /></FormField>
           <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
           <FormField label="Unit price"><input className={inputClass} type="number" value={form.unitPrice} onChange={(event) => setForm({ ...form, unitPrice: event.target.value })} required /></FormField>
-          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save sale"}</button>
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save sale"}</button>
           {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
         </form>
-      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/sales/create"><Plus aria-hidden className="h-4 w-4" /> Record sale</Link>}
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/soya-processing/sales/create"><Plus aria-hidden className="h-4 w-4" /> Record sale</Link>}
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
       <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
@@ -1068,7 +1068,7 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
           <FormField label="Customer"><input className={inputClass} value={editForm.customerName} onChange={(event) => setEditForm({ ...editForm, customerName: event.target.value })} required /></FormField>
           <FormField label="Sale date"><input className={inputClass} type="date" value={editForm.saleDate} onChange={(event) => setEditForm({ ...editForm, saleDate: event.target.value })} /></FormField>
           <div className="flex gap-3">
-            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
           </div>
         </form>
@@ -1090,7 +1090,7 @@ export function SoyaReportsPage() {
   return (
     <>
       <PageHeader title="Soya Production Reports" subtitle="Export soya profitability, yield, loss, cost, quality, stock, transfer, and sales reports." />
-      <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/soya-processing/reports/summary.csv", "soya-processing-summary.csv")}>
+      <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" onClick={() => downloadReport("/soya-processing/reports/summary.csv", "soya-processing-summary.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download soya profitability CSV
       </button>
     </>
@@ -1223,7 +1223,7 @@ export function SoyaDeliveryAnalysisPage() {
         <FormField label="Hold deliveries with average moisture above (%)">
           <input className={inputClass} type="number" min={1} max={40} step="0.1" value={limitInput} onChange={(e) => setLimitInput(e.target.value)} />
         </FormField>
-        <button onClick={saveLimit} disabled={busy || !limitInput} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">Save limit</button>
+        <button onClick={saveLimit} disabled={busy || !limitInput} className="inline-flex min-h-11 items-center app-button-primary disabled:opacity-60">Save limit</button>
         <p className="max-w-md text-xs text-ink/55">A delivery above the limit is held: its beans can&apos;t be processed until a manager accepts it (for example after drying) or rejects it.</p>
       </div>
 
@@ -1292,7 +1292,7 @@ export function SoyaDeliveryAnalysisPage() {
           <FormField label="Moisture %"><input className={inputClass} type="number" min={0.1} max={100} step="0.1" value={readingValue} onChange={(e) => setReadingValue(e.target.value)} required autoFocus /></FormField>
           <p className="text-xs text-ink/55">Each reading is kept. The delivery&apos;s moisture is the average of all its readings.</p>
           <div className="flex gap-3">
-            <button className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? "Saving…" : "Save reading"}</button>
+            <button className="inline-flex min-h-11 items-center app-button-primary disabled:opacity-60" type="submit" disabled={busy}>{busy ? "Saving…" : "Save reading"}</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setReadingFor(null)}>Cancel</button>
           </div>
         </form>
@@ -1303,7 +1303,7 @@ export function SoyaDeliveryAnalysisPage() {
           <p className="text-sm text-ink/70">{decisionFor?.decision === "APPROVE" ? "The beans become available for processing." : "The beans stay blocked and can't be processed."} Average moisture: <b>{decisionFor?.row.moisturePercent ?? "-"}%</b>.</p>
           <FormField label="Reason *"><input className={inputClass} value={decisionNote} onChange={(e) => setDecisionNote(e.target.value)} minLength={3} maxLength={300} required placeholder={decisionFor?.decision === "APPROVE" ? "e.g. Dried again, re-tested at 12.5%" : "e.g. Mouldy, returned to supplier"} /></FormField>
           <div className="flex gap-3">
-            <button className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? "Saving…" : decisionFor?.decision === "APPROVE" ? "Accept delivery" : "Reject delivery"}</button>
+            <button className="inline-flex min-h-11 items-center app-button-primary disabled:opacity-60" type="submit" disabled={busy}>{busy ? "Saving…" : decisionFor?.decision === "APPROVE" ? "Accept delivery" : "Reject delivery"}</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setDecisionFor(null)}>Cancel</button>
           </div>
         </form>

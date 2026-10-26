@@ -13,7 +13,7 @@ import { useLatestRequest } from "../lib/use-latest-request";
 
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
-const btnPrimary = "inline-flex min-h-10 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50";
+const btnPrimary = "inline-flex min-h-10 items-center gap-2 app-button-primary hover:opacity-90 disabled:opacity-50";
 const btnSecondary = "inline-flex min-h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field";
 const btnDanger = "inline-flex min-h-10 items-center gap-2 rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50";
 const cardClass = "rounded-md border border-line bg-white p-4 shadow-panel";

@@ -441,7 +441,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
         <PoultryHouseForm options={options} form={form} setForm={setForm} submit={submit} />
       ) : (
         <div className="mb-4">
-          <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/poultry/houses/create">
+          <Link className="inline-flex min-h-11 items-center gap-2 app-button-primary" href="/poultry/houses/create">
             <Plus aria-hidden className="h-4 w-4" /> Create house
           </Link>
         </div>
@@ -500,7 +500,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
                     <input className={inputClass + " flex-1"} placeholder="Name" value={editHouseForm.name} onChange={(e) => setEditHouseForm({ ...editHouseForm, name: e.target.value })} />
                     <input className={inputClass + " w-28"} placeholder="Code" value={editHouseForm.code} onChange={(e) => setEditHouseForm({ ...editHouseForm, code: e.target.value })} />
                     <input className={inputClass + " w-28"} type="number" placeholder="Capacity" value={editHouseForm.capacity} onChange={(e) => setEditHouseForm({ ...editHouseForm, capacity: e.target.value })} />
-                    <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Save</button>
+                    <button type="submit" className="min-h-11 app-button-primary">Save</button>
                     <button type="button" className="min-h-11 rounded-md border border-line px-4 text-sm" onClick={() => setEditHouse(null)}>Cancel</button>
                   </div>
                   <p className="mt-1 text-[11px] text-amber-700/70">Leave Capacity blank to remove the cap entirely.</p>
@@ -528,7 +528,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
                         <span className="self-center text-xs font-semibold text-amber-700">{editPen.code}</span>
                         <input className={inputClass + " flex-1"} placeholder="Name (optional)" value={editPenForm.name} onChange={(e) => setEditPenForm({ ...editPenForm, name: e.target.value })} />
                         <input className={inputClass + " w-28"} type="number" placeholder="Capacity" value={editPenForm.capacity} onChange={(e) => setEditPenForm({ ...editPenForm, capacity: e.target.value })} />
-                        <button type="submit" className="min-h-11 rounded-md bg-brand px-3 text-sm font-semibold text-white">Save</button>
+                        <button type="submit" className="min-h-11 app-button-primary">Save</button>
                         <button type="button" className="min-h-11 rounded-md border border-line px-3 text-sm" onClick={() => setEditPen(null)}>Cancel</button>
                       </div>
                       <p className="mt-1 text-[11px] text-amber-700/70">Leave Capacity blank to remove the cap entirely.</p>
@@ -574,7 +574,7 @@ function AddPenForm({ houseId, onSave, onCancel }: { houseId: string; onSave: (i
     <form className="mt-4 flex gap-3 rounded border border-line bg-ink/5 p-3" onSubmit={(e) => { e.preventDefault(); onSave(houseId, { name: name || undefined, capacity: Number(capacity) || undefined }); }}>
       <input className={inputClass + " flex-1"} placeholder="Pen name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
       <input className={inputClass + " w-28"} type="number" placeholder="Capacity" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
-      <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Add</button>
+      <button type="submit" className="min-h-11 app-button-primary">Add</button>
       <button type="button" className="min-h-11 rounded-md border border-line px-4 text-sm" onClick={onCancel}>Cancel</button>
     </form>
   );
@@ -609,7 +609,7 @@ function PoultryHouseForm({ options, form, setForm, submit }: {
       <FormField label="Default pens (auto-created)">
         <input name="defaultPenCount" className={inputClass} type="number" min="1" max="20" value={form.defaultPenCount} onChange={(event) => setForm({ ...form, defaultPenCount: event.target.value })} />
       </FormField>
-      <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">Save poultry house</button>
+      <button className="min-h-11 app-button-primary md:col-span-4">Save poultry house</button>
     </form>
   );
 }
@@ -721,7 +721,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
       {create ? (
         <FlockBatchForm options={options} onSaved={load} />
       ) : (
-        <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/poultry/batches/create">
+        <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/poultry/batches/create">
           <Plus aria-hidden className="h-4 w-4" /> Create batch
         </Link>
       )}
@@ -741,7 +741,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
           <FormField label="Expected close"><input className={inputClass} type="date" value={editForm.expectedCloseDate} onChange={(e) => setEditForm({ ...editForm, expectedCloseDate: e.target.value })} /></FormField>
           <FormField label="Notes"><input className={inputClass + " md:col-span-4"} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></FormField>
           <div className="md:col-span-4 flex gap-2">
-            <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Save changes</button>
+            <button type="submit" className="min-h-11 app-button-primary">Save changes</button>
             <button type="button" className="min-h-11 rounded-md border border-line px-4 text-sm" onClick={() => setEditBatch(null)}>Cancel</button>
           </div>
         </form>
@@ -912,7 +912,7 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
         ))}
       </div>
 
-      <button type="submit" disabled={submitting} className="min-h-11 rounded-md bg-brand px-6 text-sm font-semibold text-white disabled:opacity-60">
+      <button type="submit" disabled={submitting} className="min-h-11 app-button-primary disabled:opacity-60">
         {submitting ? "Creating…" : "Create flock batch"}
       </button>
     </form>
@@ -1082,7 +1082,7 @@ export function FlockBatchDetailsPage() {
                       batch.status === "CLOSED" ? ["SOLD"] : []).map((s) => <option key={s}>{s}</option>)}
                   </select>
                   <input className={inputClass + " flex-1"} placeholder="Notes (optional)" value={statusForm.notes} onChange={(e) => setStatusForm({ ...statusForm, notes: e.target.value })} />
-                  <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Update</button>
+                  <button type="submit" className="min-h-11 app-button-primary">Update</button>
                 </form>
               </div>
 
@@ -1131,7 +1131,7 @@ export function FlockBatchDetailsPage() {
                           <button
                             onClick={() => assignPen(t.id)}
                             disabled={!pendingPens[t.id]}
-                            className="min-h-9 rounded-md bg-brand px-3 text-sm font-semibold text-white disabled:opacity-40"
+                            className="min-h-9 app-button-primary disabled:opacity-40"
                           >
                             Assign
                           </button>
@@ -1464,7 +1464,7 @@ function RecountCard({ batchId, options, onDone }: { batchId: string; options: P
             <input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. quarterly recount" />
           </label>
           <div className="sm:col-span-2">
-            <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={busy} className="min-h-11 app-button-primary disabled:opacity-50">
               {busy ? "Saving…" : "Save recount"}
             </button>
           </div>
@@ -3007,7 +3007,7 @@ export function PoultryTransferPage() {
           <input className={inputClass} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
         </FormField>
         {submitError && <p className="text-sm text-red-600 md:col-span-3">{submitError}</p>}
-        <button disabled={submitting} className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-3">
+        <button disabled={submitting} className="min-h-11 app-button-primary disabled:opacity-60 md:col-span-3">
           {submitting ? "Creating…" : anyPenSelected ? `Create ${selectedPens.length} transfer${selectedPens.length > 1 ? "s" : ""}` : "Create transfer"}
         </button>
       </form>
@@ -3214,7 +3214,7 @@ export function PoultryFeedStorePage() {
       {/* ── Record a receipt ────────────────────────────────────────────── */}
       <section className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">Record a feed receipt</h3>
-        <form onSubmit={submit} className="grid gap-4 rounded-lg border border-line bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
+        <form onSubmit={submit} className="grid gap-4 app-card p-4 sm:grid-cols-2 lg:grid-cols-3">
           <FormField label="Feed store" required>
             <select className={inputClass} value={form.warehouseId} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })} required>
               <option value="">Select…</option>
@@ -3260,7 +3260,7 @@ export function PoultryFeedStorePage() {
           <div className="sm:col-span-2 lg:col-span-3">
             {submitError && <p className="mb-2 text-sm font-medium text-red-600">{submitError}</p>}
             {submitOk && <p className="mb-2 text-sm font-medium text-green-700">{submitOk}</p>}
-            <button type="submit" disabled={saving || !selectedFarmId} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={saving || !selectedFarmId} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-50">
               <Plus aria-hidden className="h-4 w-4" /> {saving ? "Saving…" : "Record receipt"}
             </button>
           </div>
@@ -3288,7 +3288,7 @@ export function PoultryReportsPage() {
   return (
     <>
       <PageHeader title="Poultry Reports" subtitle="Export poultry flock performance, health, production, and cost reports." />
-      <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/poultry/reports/summary.csv", "poultry-summary.csv")}>
+      <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" onClick={() => downloadReport("/poultry/reports/summary.csv", "poultry-summary.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download poultry summary CSV
       </button>
     </>

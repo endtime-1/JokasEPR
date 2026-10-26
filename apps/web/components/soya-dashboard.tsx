@@ -157,7 +157,7 @@ function KpiCard({
         </span>
         <span className={`h-2 w-2 rounded-full ${s.dot} mt-0.5 opacity-70`} />
       </div>
-      <strong className={`mt-4 block text-[26px] font-extrabold leading-none tracking-tight ${s.val}`}>
+      <strong className={`mt-4 block font-display tabular-nums text-[26px] font-extrabold leading-none tracking-tight ${s.val}`}>
         {value}
       </strong>
       <p className="mt-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink/50 leading-snug">{label}</p>
@@ -532,7 +532,7 @@ export function SoyaDashboardPage() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
               Operations · Soya Processing
             </p>
-            <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+            <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">
               Soya Processing Operations
             </h1>
             <p className="mt-1.5 text-sm leading-relaxed text-ink/55">

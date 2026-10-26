@@ -18,7 +18,7 @@ function SectionHeader({ icon: Icon, title, subtitle }: { icon: React.ElementTyp
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-line bg-white p-5 shadow-soft ${className}`}>
+    <div className={`app-card p-5 shadow-soft ${className}`}>
       {children}
     </div>
   );
@@ -68,7 +68,7 @@ export default function BackupPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="app-kicker">Platform</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight">Backup & Recovery</h1>
+            <h1 className="mt-1 font-display tabular-nums text-2xl font-bold tracking-tight">Backup & Recovery</h1>
             <p className="mt-1 text-sm text-ink/60">
               How this app is actually backed up on its Hostinger hosting plan — not a generic Linux-server writeup.
             </p>

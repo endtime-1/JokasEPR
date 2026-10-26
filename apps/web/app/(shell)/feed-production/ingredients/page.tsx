@@ -132,7 +132,7 @@ export default function IngredientsPage() {
               </Link>
             </div>
             <p className="app-kicker">Feed Mill</p>
-            <h1 className="mt-0.5 text-2xl font-bold text-ink">Ingredients</h1>
+            <h1 className="mt-0.5 font-display tabular-nums text-2xl font-bold text-ink">Ingredients</h1>
             <p className="mt-1 max-w-xl text-sm text-ink/55">
               Manage raw material ingredients used in feed formulas. Add, edit, or remove items from the ingredient list.
             </p>
@@ -157,7 +157,7 @@ export default function IngredientsPage() {
               <Package className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-ink">{items.filter((i) => i.status === "ACTIVE").length}</p>
+              <p className="font-display tabular-nums text-2xl font-bold text-ink">{items.filter((i) => i.status === "ACTIVE").length}</p>
               <p className="text-xs text-ink/50">Active Ingredients</p>
             </div>
           </div>
@@ -166,7 +166,7 @@ export default function IngredientsPage() {
               <FlaskConical className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-ink">{items.length}</p>
+              <p className="font-display tabular-nums text-2xl font-bold text-ink">{items.length}</p>
               <p className="text-xs text-ink/50">Total in List</p>
             </div>
           </div>

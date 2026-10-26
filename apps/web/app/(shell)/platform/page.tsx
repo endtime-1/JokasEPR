@@ -231,7 +231,7 @@ export default function PlatformPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="app-kicker">Platform</p>
-          <h1 className="text-2xl font-bold">Sites</h1>
+          <h1 className="font-display tabular-nums text-2xl font-bold">Sites</h1>
           <p className="mt-1 text-sm text-ink/60">Branches, farms, warehouses, and production sites for the organisation.</p>
         </div>
       </div>
@@ -286,7 +286,7 @@ export default function PlatformPage() {
         <div className="space-y-6">
           <form
             onSubmit={submitBranch}
-            className="grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-[1fr_140px_1fr_140px_auto]"
+            className="grid gap-4 app-card p-5 shadow-panel md:grid-cols-[1fr_140px_1fr_140px_auto]"
           >
             <FormField label="Branch name">
               <input className={inputClass} value={branchForm.name} onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })} required />
@@ -300,7 +300,7 @@ export default function PlatformPage() {
             <FormField label="Country">
               <input className={inputClass} value={branchForm.country} onChange={(e) => setBranchForm({ ...branchForm, country: e.target.value })} />
             </FormField>
-            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               <Plus className="h-4 w-4" />
               Add branch
             </button>
@@ -323,10 +323,10 @@ export default function PlatformPage() {
                   <input className={inputClass} value={editBranch.country} onChange={(e) => setEditBranch({ ...editBranch, country: e.target.value })} />
                 </FormField>
                 <div className="mt-auto flex gap-2">
-                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60">
                     {editSaving ? "Saving…" : "Save"}
                   </button>
-                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-field">
+                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 app-button-secondary">
                     Cancel
                   </button>
                 </div>
@@ -353,7 +353,7 @@ export default function PlatformPage() {
         <div className="space-y-6">
           <form
             onSubmit={submitFarm}
-            className="grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-[1fr_150px_1fr_auto]"
+            className="grid gap-4 app-card p-5 shadow-panel md:grid-cols-[1fr_150px_1fr_auto]"
           >
             <FormField label="Farm name">
               <input className={inputClass} value={farmForm.name} onChange={(e) => setFarmForm({ ...farmForm, name: e.target.value })} required />
@@ -364,7 +364,7 @@ export default function PlatformPage() {
             <FormField label="Location">
               <input className={inputClass} value={farmForm.location} onChange={(e) => setFarmForm({ ...farmForm, location: e.target.value })} />
             </FormField>
-            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               <Plus className="h-4 w-4" />
               Add farm
             </button>
@@ -384,10 +384,10 @@ export default function PlatformPage() {
                   <input className={inputClass} value={editFarm.location} onChange={(e) => setEditFarm({ ...editFarm, location: e.target.value })} />
                 </FormField>
                 <div className="mt-auto flex gap-2">
-                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60">
                     {editSaving ? "Saving…" : "Save"}
                   </button>
-                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-field">
+                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 app-button-secondary">
                     Cancel
                   </button>
                 </div>
@@ -413,7 +413,7 @@ export default function PlatformPage() {
         <div className="space-y-6">
           <form
             onSubmit={submitWarehouse}
-            className="grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-[1fr_130px_1fr_160px_auto]"
+            className="grid gap-4 app-card p-5 shadow-panel md:grid-cols-[1fr_130px_1fr_160px_auto]"
           >
             <FormField label="Warehouse name">
               <input className={inputClass} value={warehouseForm.name} onChange={(e) => setWarehouseForm({ ...warehouseForm, name: e.target.value })} required />
@@ -434,7 +434,7 @@ export default function PlatformPage() {
                 <option value="COLD_STORAGE">Cold storage</option>
               </select>
             </FormField>
-            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               <Plus className="h-4 w-4" />
               Add warehouse
             </button>
@@ -463,10 +463,10 @@ export default function PlatformPage() {
                   </select>
                 </FormField>
                 <div className="mt-auto flex gap-2">
-                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60">
                     {editSaving ? "Saving…" : "Save"}
                   </button>
-                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-field">
+                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 app-button-secondary">
                     Cancel
                   </button>
                 </div>
@@ -493,7 +493,7 @@ export default function PlatformPage() {
         <div className="space-y-6">
           <form
             onSubmit={submitSite}
-            className="grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-[1fr_130px_1fr_180px_auto]"
+            className="grid gap-4 app-card p-5 shadow-panel md:grid-cols-[1fr_130px_1fr_180px_auto]"
           >
             <FormField label="Site name">
               <input className={inputClass} value={siteForm.name} onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })} required />
@@ -511,7 +511,7 @@ export default function PlatformPage() {
                 <option value="MIXED">Mixed</option>
               </select>
             </FormField>
-            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <button disabled={saving} className="mt-auto flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60">
               <Plus className="h-4 w-4" />
               Add site
             </button>
@@ -538,10 +538,10 @@ export default function PlatformPage() {
                   </select>
                 </FormField>
                 <div className="mt-auto flex gap-2">
-                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+                  <button type="submit" disabled={editSaving} className="flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60">
                     {editSaving ? "Saving…" : "Save"}
                   </button>
-                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-field">
+                  <button type="button" onClick={() => setEditing(null)} className="flex min-h-11 items-center gap-2 app-button-secondary">
                     Cancel
                   </button>
                 </div>

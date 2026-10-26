@@ -57,7 +57,7 @@ function MetricCard({ card }: { card: SectionCard }) {
           <ArrowRight aria-hidden className="h-3.5 w-3.5 text-ink/20 opacity-0 transition-opacity group-hover:opacity-100" />
         </span>
       </div>
-      <strong className={`mt-3 block text-[22px] font-extrabold leading-none tracking-tight ${t.val}`}>
+      <strong className={`mt-3 block font-display tabular-nums text-[22px] font-extrabold leading-none tracking-tight ${t.val}`}>
         {fmt(card.value, card.unit)}
         {card.unit && card.unit !== "GHS" && <span className="ml-1 text-xs font-bold text-ink/40">{card.unit}</span>}
       </strong>

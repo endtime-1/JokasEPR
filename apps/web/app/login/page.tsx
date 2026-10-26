@@ -62,7 +62,7 @@ export default function LoginPage() {
             <BrandLogo className="h-14 w-14 rounded-xl bg-white shadow-soft" />
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-white/75">AKOKO SOLUTIONS ERP</p>
-              <h1 className="text-2xl font-bold tracking-tight">Agribusiness Command Center</h1>
+              <h1 className="font-display tabular-nums text-2xl font-bold tracking-tight">Agribusiness Command Center</h1>
             </div>
           </div>
 
@@ -104,7 +104,7 @@ export default function LoginPage() {
             ["Audit", "Tracked"]
           ].map(([val, label]) => (
             <div key={label} className="rounded-xl border border-white/15 bg-white/10 p-4">
-              <p className="text-2xl font-bold">{val}</p>
+              <p className="font-display tabular-nums text-2xl font-bold">{val}</p>
               <p className="text-white/70">{label}</p>
             </div>
           ))}
@@ -128,7 +128,7 @@ export default function LoginPage() {
               </span>
             </div>
             <p className="app-kicker">AKOKO SOLUTIONS</p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight">
+            <h2 className="mt-2 font-display tabular-nums text-3xl font-bold tracking-tight">
               Sign in to your workspace
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-ink/60">

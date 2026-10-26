@@ -201,10 +201,10 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           <SelectField label="Product" value={form.productId || options.products[0]?.id || ""} options={options.products} onChange={(value) => setForm({ ...form, productId: value })} />
           <FormField label="Reorder level"><input className={inputClass} type="number" value={form.reorderLevel} onChange={(event) => setForm({ ...form, reorderLevel: event.target.value })} required /></FormField>
           <FormField label="Opening quantity"><input className={inputClass} type="number" value={form.openingQuantity} onChange={(event) => setForm({ ...form, openingQuantity: event.target.value })} /></FormField>
-          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save item"}</button>
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save item"}</button>
           {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
         </form>
-      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
       {!create && rows.length >= 200 && (
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           Showing the first 200 inventory items. Use the table&apos;s search box to find an item outside this list.
@@ -224,7 +224,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           </FormField>
           <div className="flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditItem(null)} disabled={savingEdit}>Cancel</button>
-            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
           </div>
         </form>
       </Modal>
@@ -386,7 +386,7 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
         ) : null}
         {mode === "adjustments" ? <FormField label="Adjustment type"><select className={inputClass} value={form.adjustmentType} onChange={(event) => setForm({ ...form, adjustmentType: event.target.value })}><option>DAMAGE</option><option>EXPIRY</option><option>WASTE</option><option>COUNT_CORRECTION</option><option>WRITE_OFF</option><option>FOUND_STOCK</option></select></FormField> : null}
         {mode === "adjustments" ? <FormField label="Reason"><input className={inputClass} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} required /></FormField> : null}
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">{submitting ? "Submitting…" : `Submit ${title.toLowerCase()}`}</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:col-span-4">{submitting ? "Submitting…" : `Submit ${title.toLowerCase()}`}</button>
         {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
       </form>
       {mode === "transfers" && <StagedTransfersPanel />}
@@ -810,7 +810,7 @@ export function WarehousesOverviewPage() {
             <Link
               key={w.id}
               href={`/inventory/warehouses/${w.id}`}
-              className="group rounded-xl border border-line bg-white p-4 shadow-sm transition hover:border-brand/40 hover:shadow-md"
+              className="group app-card p-4 shadow-sm transition hover:border-brand/40 hover:shadow-md"
             >
               <div className="mb-3 flex items-start justify-between gap-2">
                 <div>
@@ -855,7 +855,7 @@ type WarehouseDetail = {
 
 function KpiCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-line bg-white p-4 shadow-sm">
+    <div className="app-card p-4 shadow-sm">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-ink/45">{label}</p>
       <p className="mt-1 text-xl font-bold text-ink">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-ink/55">{sub}</p>}
@@ -1132,7 +1132,7 @@ export function WarehouseCleanupPage() {
                         {g.warehouses.filter((w) => w.id !== merge.sourceId).map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                       </select>
                       <input className={inputClass} placeholder="Reason" value={merge.reason} onChange={(e) => setMerge({ ...merge, reason: e.target.value })} />
-                      <button type="button" disabled={merging} className="rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" onClick={runMerge}>{merging ? "Merging…" : "Merge"}</button>
+                      <button type="button" disabled={merging} className="app-button-primary disabled:opacity-60" onClick={runMerge}>{merging ? "Merging…" : "Merge"}</button>
                     </div>
                   )}
                   {merge?.branchId === g.branchId && mergeError && <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{mergeError}</p>}
@@ -1150,7 +1150,7 @@ export function InventoryReportsPage() {
   return (
     <InventoryShell>
       <PageHeader title="Inventory Valuation Report" subtitle="FIFO inventory valuation by warehouse, SKU, quantity, unit cost, and total value." />
-      <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/inventory/reports/valuation.csv", "inventory-valuation.csv")}>
+      <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" onClick={() => downloadReport("/inventory/reports/valuation.csv", "inventory-valuation.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download valuation CSV
       </button>
     </InventoryShell>
@@ -1273,7 +1273,7 @@ export function WarehouseLocationsPage() {
         <FormField label="Code"><input className={inputClass} value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required maxLength={40} /></FormField>
         <FormField label="Name"><input className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={120} /></FormField>
         <FormField label="Barcode"><input className={inputClass} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} /></FormField>
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5"><Plus aria-hidden className="h-4 w-4" /> Save location</button>
+        <button className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary md:col-span-5"><Plus aria-hidden className="h-4 w-4" /> Save location</button>
       </form>
       <LocationsTable rows={rows} loading={loading} onEdit={startEdit} onDelete={(row) => { setDeleteError(""); setDeleteLocation(row); }} />
       <Modal open={!!editLocation} onClose={() => setEditLocation(null)} title="Edit warehouse location" size="sm">
@@ -1291,7 +1291,7 @@ export function WarehouseLocationsPage() {
           </FormField>
           <div className="flex justify-end gap-3">
             <button type="button" className="app-button-secondary" onClick={() => setEditLocation(null)} disabled={savingEdit}>Cancel</button>
-            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
           </div>
         </form>
       </Modal>

@@ -139,7 +139,7 @@ export default function NotificationPreferencesPage() {
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
+                className="flex items-center gap-2 app-button-primary disabled:opacity-60"
               >
                 {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save Preferences

@@ -285,12 +285,12 @@ export function FeedFormulaListPage() {
     }
   }
 
-  const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
+  const inputCls = "min-h-10 w-full app-control";
 
   return (
     <>
       <PageHeader title="Feed Formulas" subtitle="Manage feed formulas, ingredients, costing, and active formula versions." />
-      <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/formulas/create">
+      <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/feed-production/formulas/create">
         <Plus aria-hidden className="h-4 w-4" /> Create formula
       </Link>
       <p className="mb-4 text-xs text-ink/50">
@@ -517,7 +517,7 @@ export function FormulaBuilderPage() {
     }
   }
 
-  const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
+  const inputCls = "min-h-10 w-full app-control";
 
   return (
     <>
@@ -530,7 +530,7 @@ export function FormulaBuilderPage() {
               <ArrowLeft className="h-3 w-3" /> Formulas
             </Link>
             <p className="app-kicker">Feed Mill</p>
-            <h1 className="mt-0.5 text-2xl font-bold text-ink">{base ? "Alternative Formula" : "New Feed Formula"}</h1>
+            <h1 className="mt-0.5 font-display tabular-nums text-2xl font-bold text-ink">{base ? "Alternative Formula" : "New Feed Formula"}</h1>
             <p className="mt-1 text-sm text-ink/55">
               {base
                 ? <>Another formula for <strong>{base.finishedProduct?.name}</strong>, next to {base.code} ({base.name}). It always stocks the same product. The ingredients below are copied from {base.code} — change the ones that differ (e.g. local soya instead of HiPro soya).</>
@@ -1189,7 +1189,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               <input
                 value={headerDraft.name}
                 onChange={(e) => setHeaderDraft((d) => ({ ...d, name: e.target.value }))}
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
               />
             </div>
             <div>
@@ -1200,7 +1200,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                 step="0.001"
                 value={headerDraft.targetBatchKg}
                 onChange={(e) => setHeaderDraft((d) => ({ ...d, targetBatchKg: e.target.value }))}
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control text-right"
               />
             </div>
             <div className="sm:col-span-3">
@@ -1209,7 +1209,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                 value={headerDraft.finishedProductId}
                 disabled={isAlternative}
                 onChange={(e) => setHeaderDraft((d) => ({ ...d, finishedProductId: e.target.value }))}
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15 disabled:bg-field disabled:text-ink/70"
+                className="min-h-10 w-full app-control disabled:bg-field disabled:text-ink/70"
               >
                 <option value="">Select finished product…</option>
                 <FeedFormOptions products={options.finishedFeeds} />
@@ -1229,7 +1229,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                 <select
                   value={headerDraft.branchId}
                   onChange={(e) => setHeaderDraft((d) => ({ ...d, branchId: e.target.value }))}
-                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  className="min-h-10 w-full app-control"
                 >
                   {(options.branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
                 </select>
@@ -1265,7 +1265,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
       {mode === "versions" ? (
         <>
-          <button disabled={creatingVersion} className="mb-2 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" onClick={createVersion}>
+          <button disabled={creatingVersion} className="mb-2 inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60" onClick={createVersion}>
             <RotateCw aria-hidden className="h-4 w-4" /> {creatingVersion ? "Creating…" : "Create version"}
           </button>
           {createVersionErr && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{createVersionErr}</p>}
@@ -1449,7 +1449,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Ingredient *</label>
                 <select
-                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  className="min-h-10 w-full app-control"
                   value={ingredient.ingredientId}
                   onChange={(e) => setIngredient({ ...ingredient, ingredientId: e.target.value })}
                   required
@@ -1464,7 +1464,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">kg per batch *</label>
                 <input
                   type="number" min="0" step="0.001" required placeholder="0"
-                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  className="min-h-10 w-full app-control text-right"
                   value={ingredient.quantityKg}
                   onChange={(e) => setIngredient({ ...ingredient, quantityKg: e.target.value })}
                 />
@@ -1473,7 +1473,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Unit Cost (GHS/kg)</label>
                 <input
                   type="number" min="0" step="0.01" placeholder="0.00"
-                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  className="min-h-10 w-full app-control text-right"
                   value={ingredient.unitCost}
                   onChange={(e) => setIngredient({ ...ingredient, unitCost: e.target.value })}
                 />
@@ -1652,7 +1652,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
     }
   }
 
-  const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
+  const inputCls = "min-h-10 w-full app-control";
 
   return (
     <>
@@ -1679,7 +1679,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           <OrderForm options={options} form={form} setForm={setForm} submit={submit} submitting={submitting} />
         </>
       ) : (
-        <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/orders/create">
+        <Link className="mb-4 inline-flex min-h-11 items-center gap-2 app-button-primary" href="/feed-production/orders/create">
           <Plus aria-hidden className="h-4 w-4" /> Create order
         </Link>
       )}
@@ -2088,7 +2088,7 @@ export function FeedBatchListPage() {
           ["Total produced (kg)", number(totalKg)],
           ["Avg margin", rows.length ? `${(rows.reduce((s, r) => s + (r.metrics?.profitMargin ?? 0), 0) / rows.length).toFixed(1)}%` : "-"],
         ].map(([lbl, val]) => (
-          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+          <article key={lbl} className="app-card p-4 shadow-panel">
             <p className="text-xs text-ink/50">{lbl}</p>
             <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
           </article>
@@ -2132,7 +2132,7 @@ export function FeedBatchListPage() {
               It is stocked as <strong>{moveTarget.finishedProduct?.name ?? "—"}</strong>. Its {number(moveTarget.producedQuantityKg)} kg will be moved to the product
               you pick, in the same warehouse. Raw materials are not affected.
             </p>
-            <select className="mt-4 min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" value={moveProductId} onChange={(e) => setMoveProductId(e.target.value)}>
+            <select className="mt-4 min-h-10 w-full app-control" value={moveProductId} onChange={(e) => setMoveProductId(e.target.value)}>
               <option value="">Select the correct product…</option>
               <FeedFormOptions products={options.finishedFeeds} />
             </select>
@@ -2290,7 +2290,7 @@ export function FeedBatchCreatePage() {
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Production order *</label>
               <select
                 required
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={form.productionOrderId}
                 onChange={(e) => setForm((f) => ({ ...f, productionOrderId: e.target.value }))}
               >
@@ -2326,7 +2326,7 @@ export function FeedBatchCreatePage() {
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Raw material warehouse *</label>
               <select
                 required
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || ""}
                 onChange={(e) => setForm((f) => ({ ...f, rawMaterialWarehouseId: e.target.value }))}
               >
@@ -2338,7 +2338,7 @@ export function FeedBatchCreatePage() {
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Finished feed warehouse *</label>
               <select
                 required
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={form.finishedWarehouseId || guessFeedWarehouseId(options.warehouses, "finish") || ""}
                 onChange={(e) => setForm((f) => ({ ...f, finishedWarehouseId: e.target.value }))}
               >
@@ -2350,7 +2350,7 @@ export function FeedBatchCreatePage() {
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Batch number (auto if blank)</label>
               <input
                 type="text" placeholder="e.g. BATCH-2026-0012" maxLength={48}
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={form.batchNumber}
                 onChange={(e) => setForm((f) => ({ ...f, batchNumber: e.target.value }))}
               />
@@ -2365,7 +2365,7 @@ export function FeedBatchCreatePage() {
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Produced quantity (kg) *</label>
               <input
                 type="number" min="0.001" step="0.001" required
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control text-right"
                 value={form.producedQuantityKg}
                 onChange={(e) => setForm((f) => ({ ...f, producedQuantityKg: e.target.value }))}
               />
@@ -2374,7 +2374,7 @@ export function FeedBatchCreatePage() {
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Wastage (kg)</label>
               <input
                 type="number" min="0" step="0.001" placeholder="0"
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control text-right"
                 value={form.wastageKg}
                 onChange={(e) => setForm((f) => ({ ...f, wastageKg: e.target.value }))}
               />
@@ -2383,7 +2383,7 @@ export function FeedBatchCreatePage() {
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Production date</label>
               <input
                 type="date"
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={form.productionDate}
                 onChange={(e) => setForm((f) => ({ ...f, productionDate: e.target.value }))}
               />
@@ -2401,7 +2401,7 @@ export function FeedBatchCreatePage() {
                 </label>
                 <input
                   type="number" min="0" step="0.01" placeholder={field === "expectedSalesValue" ? "auto from price list" : "0.00"}
-                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  className="min-h-10 w-full app-control text-right"
                   value={form[field]}
                   onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
                 />
@@ -2547,7 +2547,7 @@ export function FeedBatchDetailsPage() {
             <ArrowLeft className="h-3 w-3" /> Batches
           </Link>
           <p className="app-kicker">Feed Mill</p>
-          <h1 className="mt-0.5 text-2xl font-bold text-ink">{b?.batchNumber ?? "Batch Details"}</h1>
+          <h1 className="mt-0.5 font-display tabular-nums text-2xl font-bold text-ink">{b?.batchNumber ?? "Batch Details"}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge status={b?.status ?? ""} />
             {b?.productionSite && <span className="text-sm text-ink/50">{b.productionSite.name}</span>}
@@ -2605,7 +2605,7 @@ export function FeedBatchDetailsPage() {
           ["Total cost", money(b?.metrics?.totalCost)],
           ["Profit margin", `${b?.metrics?.profitMargin ?? 0}%`]
         ] as [string, string][]).map(([lbl, val]) => (
-          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+          <article key={lbl} className="app-card p-4 shadow-panel">
             <p className="text-xs text-ink/50">{lbl}</p>
             <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
           </article>
@@ -2614,7 +2614,7 @@ export function FeedBatchDetailsPage() {
 
       {/* Production order reference */}
       {b?.productionOrder && (
-        <div className="mb-6 rounded-xl border border-line bg-white px-5 py-3.5 shadow-panel">
+        <div className="mb-6 app-card px-5 py-3.5 shadow-panel">
           <span className="text-xs font-bold uppercase tracking-wide text-ink/40">Production Order</span>
           <span className="ml-3 font-mono text-sm font-semibold text-ink">{b.productionOrder.orderNumber}</span>
           <span className="ml-3 text-sm text-ink/50">({number(b.productionOrder.plannedQuantityKg)} kg planned)</span>
@@ -2698,13 +2698,13 @@ export function FeedBatchDetailsPage() {
             <button onClick={() => setSaleErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
-        <form onSubmit={submitSale} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+        <form onSubmit={submitSale} className="app-card p-4 shadow-panel">
           <div className="grid gap-4 md:grid-cols-4">
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">From warehouse *</label>
               <select
                 required
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={saleForm.fromWarehouseId}
                 onChange={(e) => setSaleForm((f) => ({ ...f, fromWarehouseId: e.target.value }))}
               >
@@ -2715,7 +2715,7 @@ export function FeedBatchDetailsPage() {
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Quantity (kg) *</label>
               <input type="number" min="0.001" step="0.001" required
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control text-right"
                 value={saleForm.quantityKg}
                 onChange={(e) => setSaleForm((f) => ({ ...f, quantityKg: e.target.value }))}
               />
@@ -2723,7 +2723,7 @@ export function FeedBatchDetailsPage() {
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Unit price (GHS/kg) *</label>
               <input type="number" min="0" step="0.01" required
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control text-right"
                 value={saleForm.unitPrice}
                 onChange={(e) => setSaleForm((f) => ({ ...f, unitPrice: e.target.value }))}
               />
@@ -2731,7 +2731,7 @@ export function FeedBatchDetailsPage() {
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Customer name</label>
               <input type="text" placeholder="optional" maxLength={160}
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={saleForm.customerName}
                 onChange={(e) => setSaleForm((f) => ({ ...f, customerName: e.target.value }))}
               />
@@ -2739,7 +2739,7 @@ export function FeedBatchDetailsPage() {
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Payment method</label>
               <select
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full app-control"
                 value={saleForm.paymentMethod}
                 onChange={(e) => setSaleForm((f) => ({ ...f, paymentMethod: e.target.value }))}
               >
@@ -2755,7 +2755,7 @@ export function FeedBatchDetailsPage() {
               Sale value: <strong>{money(Number(saleForm.quantityKg) * Number(saleForm.unitPrice))}</strong> — booked as a paid cash sale (invoice + revenue) in Sales.
             </p>
           )}
-          <button type="submit" disabled={submittingSale} className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50">
+          <button type="submit" disabled={submittingSale} className="mt-4 inline-flex min-h-9 items-center gap-2 app-button-primary disabled:opacity-50">
             <TrendingUp className="h-4 w-4" aria-hidden /> {submittingSale ? "Recording…" : "Record sale"}
           </button>
         </form>
@@ -2769,7 +2769,7 @@ export function FeedBatchDetailsPage() {
             <button onClick={() => setCostErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
-        <form onSubmit={submitCost} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+        <form onSubmit={submitCost} className="app-card p-4 shadow-panel">
           <p className="mb-3 text-xs text-ink/45">Records a new cost entry for this batch. Raw material cost is computed automatically from usage records.</p>
           <div className="grid gap-4 md:grid-cols-4">
             {(["laborCost", "packagingCost", "overheadCost", "expectedSalesValue"] as const).map((field) => (
@@ -2778,14 +2778,14 @@ export function FeedBatchDetailsPage() {
                   {field === "laborCost" ? "Labor cost (GHS)" : field === "packagingCost" ? "Packaging cost (GHS)" : field === "overheadCost" ? "Overhead cost (GHS)" : "Expected sales value (GHS)"}
                 </label>
                 <input type="number" min="0" step="0.01" placeholder="0.00"
-                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  className="min-h-10 w-full app-control text-right"
                   value={costForm[field]}
                   onChange={(e) => setCostForm((f) => ({ ...f, [field]: e.target.value }))}
                 />
               </div>
             ))}
           </div>
-          <button type="submit" disabled={submittingCost} className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50">
+          <button type="submit" disabled={submittingCost} className="mt-4 inline-flex min-h-9 items-center gap-2 app-button-primary disabled:opacity-50">
             <Calculator className="h-4 w-4" aria-hidden /> {submittingCost ? "Recording…" : "Record costs"}
           </button>
         </form>
@@ -2839,7 +2839,7 @@ export function FeedRawMaterialUsagePage() {
           ["Total wastage (kg)", number(totalWastage)],
           ["Total raw material cost", money(totalCost)],
         ].map(([lbl, val]) => (
-          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+          <article key={lbl} className="app-card p-4 shadow-panel">
             <p className="text-xs text-ink/50">{lbl}</p>
             <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
           </article>
@@ -2951,7 +2951,7 @@ export function FeedQualityControlPage() {
           <FormField label="Protein %"><input className={inputClass} type="number" step="0.01" min="0" max="100" placeholder="e.g. 18.0" value={form.proteinPercent} onChange={(e) => setForm({ ...form, proteinPercent: e.target.value })} /></FormField>
           <FormField label="Texture notes"><input className={inputClass} placeholder="e.g. Fine mash, uniform colour" value={form.textureNotes} onChange={(e) => setForm({ ...form, textureNotes: e.target.value })} /></FormField>
           <div className="flex items-end gap-4 md:col-span-4">
-            <button type="submit" disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-50">
               <PackageCheck aria-hidden className="h-4 w-4" /> {submitting ? "Recording…" : "Record quality check"}
             </button>
             <p className="text-xs text-ink/40">Checks start as PENDING — approve or fail from the batch detail page.</p>
@@ -3019,7 +3019,7 @@ export function FinishedFeedInventoryPage() {
           ["Total bags (50kg)", totalBags],
           ["Stock value", money(totalValue)],
         ].map(([lbl, val]) => (
-          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+          <article key={lbl} className="app-card p-4 shadow-panel">
             <p className="text-xs text-ink/50">{lbl}</p>
             <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
           </article>
@@ -3128,7 +3128,7 @@ export function InternalFeedTransferPage() {
           <SelectField label="To house" value={form.toPoultryHouseId || houses[0]?.id || ""} options={houses} onChange={(v) => setForm({ ...form, toPoultryHouseId: v })} />
           <FormField label="Quantity (kg) *"><input className={inputClass} type="number" min="0.001" step="0.001" required value={form.quantityKg} onChange={(e) => setForm({ ...form, quantityKg: e.target.value })} /></FormField>
           <div className="flex items-end md:col-span-5">
-            <button type="submit" disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-50">
               {submitting ? "Transferring…" : "Create transfer"}
             </button>
           </div>
@@ -3196,7 +3196,7 @@ export function FeedReportsPage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              className="min-h-10 w-full app-control"
             />
           </div>
           <div>
@@ -3205,7 +3205,7 @@ export function FeedReportsPage() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              className="min-h-10 w-full app-control"
             />
           </div>
           <div className="flex items-end">
@@ -3248,7 +3248,7 @@ export function FeedReportsPage() {
               <button
                 onClick={() => download(report.path, report.filename)}
                 disabled={isDownloading}
-                className="mt-auto inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50"
+                className="mt-auto inline-flex min-h-9 items-center justify-center gap-2 app-button-primary disabled:opacity-50"
               >
                 <Download className="h-4 w-4" aria-hidden />
                 {isDownloading ? "Downloading…" : "Download CSV"}
@@ -3337,7 +3337,7 @@ export function FeedPackagingRecordPage() {
             <label className="mb-1.5 block text-xs font-semibold text-ink/55">Production Batch *</label>
             <select
               required
-              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              className="min-h-10 w-full app-control"
               value={form.productionBatchId}
               onChange={(e) => setForm((f) => ({ ...f, productionBatchId: e.target.value }))}
             >
@@ -3351,7 +3351,7 @@ export function FeedPackagingRecordPage() {
             <label className="mb-1.5 block text-xs font-semibold text-ink/55">Package size (kg) *</label>
             <input
               type="number" min="0.001" step="0.001" required
-              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              className="min-h-10 w-full app-control text-right"
               value={form.packageSizeKg}
               onChange={(e) => setForm((f) => ({ ...f, packageSizeKg: e.target.value }))}
             />
@@ -3360,7 +3360,7 @@ export function FeedPackagingRecordPage() {
             <label className="mb-1.5 block text-xs font-semibold text-ink/55">Package count *</label>
             <input
               type="number" min="1" step="1" required
-              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              className="min-h-10 w-full app-control text-right"
               value={form.packageCount}
               onChange={(e) => setForm((f) => ({ ...f, packageCount: e.target.value }))}
             />
@@ -3369,7 +3369,7 @@ export function FeedPackagingRecordPage() {
             <label className="mb-1.5 block text-xs font-semibold text-ink/55">Packaged date</label>
             <input
               type="date"
-              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              className="min-h-10 w-full app-control"
               value={form.packagedAt}
               onChange={(e) => setForm((f) => ({ ...f, packagedAt: e.target.value }))}
             />
@@ -3553,7 +3553,7 @@ function HiKpi({ label, value, Icon, color = "blue", sub }: {
       </div>
       <div className="min-w-0">
         <p className="text-[11px] font-bold uppercase tracking-wide text-ink/45">{label}</p>
-        <p className="mt-0.5 text-2xl font-black text-ink">{value}</p>
+        <p className="mt-0.5 font-display tabular-nums text-2xl font-black text-ink">{value}</p>
         {sub && <p className="text-xs text-ink/55">{sub}</p>}
       </div>
     </div>
@@ -3871,7 +3871,7 @@ export function HiproPredictivePage() {
           <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div>
               <span className="app-kicker flex items-center gap-1.5"><Brain className="h-3 w-3" /> Feed Mill Intelligence</span>
-              <h1 className="mt-1.5 text-[22px] font-black tracking-tight text-ink">Hi-Pro Predictive Planner</h1>
+              <h1 className="mt-1.5 font-display tabular-nums text-[22px] font-black tracking-tight text-ink">Hi-Pro Predictive Planner</h1>
               <p className="mt-1 max-w-xl text-sm text-ink/60">
                 Enter production targets in bags — the system uses your stored formulas to calculate every ingredient required. Open any ingredient to see its full quantity and cost breakdown.
               </p>

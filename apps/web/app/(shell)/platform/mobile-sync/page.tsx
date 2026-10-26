@@ -126,7 +126,7 @@ export default function MobileSyncPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Mobile Sync Records</h1>
+            <h1 className="font-display tabular-nums text-2xl font-bold text-gray-900">Mobile Sync Records</h1>
             <p className="text-sm text-gray-500 mt-1">Offline submissions synced from mobile devices</p>
           </div>
           <button
@@ -145,7 +145,7 @@ export default function MobileSyncPage() {
             {statCards.map((s) => (
               <div key={s.label} className="rounded-xl border border-gray-200 bg-white p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{s.label}</p>
-                <p className={`mt-1 text-3xl font-bold ${s.color}`}>{s.value.toLocaleString()}</p>
+                <p className={`mt-1 font-display tabular-nums text-3xl font-bold ${s.color}`}>{s.value.toLocaleString()}</p>
               </div>
             ))}
           </div>

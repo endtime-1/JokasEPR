@@ -81,7 +81,7 @@ export default function NotificationConfigPage() {
         ) : (
           <div className="space-y-4">
             {/* Email */}
-            <div className="rounded-xl border border-line bg-white p-5">
+            <div className="app-card p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-lg bg-amber-50 text-amber-600">
@@ -129,7 +129,7 @@ export default function NotificationConfigPage() {
             </div>
 
             {/* SMS */}
-            <div className="rounded-xl border border-line bg-white p-5">
+            <div className="app-card p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-lg bg-green-50 text-green-600">
@@ -153,7 +153,7 @@ export default function NotificationConfigPage() {
             </div>
 
             {/* WhatsApp */}
-            <div className="rounded-xl border border-line bg-white p-5">
+            <div className="app-card p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
@@ -188,7 +188,7 @@ export default function NotificationConfigPage() {
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
+                className="flex items-center gap-2 app-button-primary disabled:opacity-60"
               >
                 {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save Configuration

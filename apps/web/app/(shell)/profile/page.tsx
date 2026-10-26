@@ -184,7 +184,7 @@ export default function ProfilePage() {
             <button
               type="submit"
               disabled={pwLoading}
-              className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-opacity disabled:opacity-60"
+              className="inline-flex items-center justify-center app-button-primary disabled:opacity-60"
             >
               {pwLoading ? "Saving…" : "Update password"}
             </button>

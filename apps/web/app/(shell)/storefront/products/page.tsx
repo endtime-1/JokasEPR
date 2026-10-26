@@ -345,7 +345,7 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
             <button
               onClick={handleSave}
               disabled={!dirty || saving}
-              className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brandDark active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex items-center gap-1.5 app-button-primary disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Save className="h-3.5 w-3.5" />
               {saving ? "Saving…" : "Save Changes"}

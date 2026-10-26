@@ -322,7 +322,7 @@ export function MarketsPage() {
         <label className="grid gap-1 text-sm font-semibold">Code<input className={inputClass} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="optional" /></label>
         <label className="grid gap-1 text-sm font-semibold">Branch<select className={inputClass} value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}><option value="">Company-wide</option>{options.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Marketer<select className={inputClass} value={form.assignedUserId} onChange={(e) => setForm({ ...form, assignedUserId: e.target.value })}><option value="">Unassigned</option>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>)}</select></label>
-        <button disabled={creating} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:w-fit" type="submit"><Plus className="h-4 w-4" /> {creating ? "Creating…" : "Create market"}</button>
+        <button disabled={creating} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:w-fit" type="submit"><Plus className="h-4 w-4" /> {creating ? "Creating…" : "Create market"}</button>
         {createError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-4">{createError}</p>}
       </form>
 
@@ -392,7 +392,7 @@ export function MarketTargetListPage() {
     <>
       <Header title="Market Targets" subtitle="Weekly and monthly targets that become approved feed production plans." />
       <div className="mb-4 flex flex-wrap gap-2">
-        <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/market-planning/targets/create-weekly"><Plus className="h-4 w-4" /> Weekly target</Link>
+        <Link className="inline-flex min-h-11 items-center gap-2 app-button-primary" href="/market-planning/targets/create-weekly"><Plus className="h-4 w-4" /> Weekly target</Link>
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" href="/market-planning/targets/create-monthly"><Plus className="h-4 w-4" /> Monthly target</Link>
       </div>
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
@@ -514,7 +514,7 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
         <label className="grid gap-1 text-sm font-semibold">Adjustment %<input className={inputClass} type="number" step="0.01" value={form.adjustmentPercent} onChange={(e) => setForm({ ...form, adjustmentPercent: e.target.value })} /></label>
         <label className="grid gap-1 text-sm font-semibold">Bag size kg<input className={inputClass} type="number" min="1" step="0.01" value={form.bagSizeKg} onChange={(e) => setForm({ ...form, bagSizeKg: e.target.value })} /></label>
         <label className="grid gap-1 text-sm font-semibold md:col-span-2">Adjustment reason<textarea className="min-h-24 rounded-md border border-line px-3 py-2" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></label>
-        <div className="flex items-center gap-3 md:col-span-2"><button disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><Plus className="h-4 w-4" /> {submitting ? "Creating…" : "Create target"}</button>{message && <span className={`text-sm font-semibold ${messageHasWarning ? "text-amber-700" : "text-emerald-700"}`}>{message}</span>}</div>
+        <div className="flex items-center gap-3 md:col-span-2"><button disabled={submitting} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60" type="submit"><Plus className="h-4 w-4" /> {submitting ? "Creating…" : "Create target"}</button>{message && <span className={`text-sm font-semibold ${messageHasWarning ? "text-amber-700" : "text-emerald-700"}`}>{message}</span>}</div>
         {submitError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-2">{submitError}</p>}
       </form>
     </>
@@ -676,7 +676,7 @@ export function MarketTargetDetailsPage() {
         <Header title={target?.targetNumber ?? "Market Target"} subtitle={target?.title ?? "Target details, production plan, MRP, recommendations, and approval trail."} />
         <div className="flex gap-2">
           {target?.status === "DRAFT" && (
-            <button type="button" onClick={submitForApproval} disabled={submitting} className="inline-flex min-h-10 items-center gap-2 rounded-md bg-brand px-3 text-sm font-semibold text-white disabled:opacity-60">
+            <button type="button" onClick={submitForApproval} disabled={submitting} className="inline-flex min-h-10 items-center gap-2 app-button-primary disabled:opacity-60">
               <SendHorizontal className="h-4 w-4" /> {submitting ? "Submitting…" : "Submit for approval"}
             </button>
           )}
@@ -707,7 +707,7 @@ export function MarketTargetDetailsPage() {
           <label className="grid gap-1 text-sm font-semibold">End date<input required className={inputClass} type="date" value={editForm.periodEnd} onChange={(e) => setEditForm({ ...editForm, periodEnd: e.target.value })} /></label>
           <label className="grid gap-1 text-sm font-semibold md:col-span-2">Notes<textarea className="min-h-20 rounded-md border border-line px-3 py-2" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></label>
           <div className="flex gap-3 md:col-span-2">
-            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button className="inline-flex min-h-11 items-center gap-2 app-button-primary" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
             <button type="button" className="app-button-secondary" onClick={() => setEditing(false)} disabled={savingEdit}>Cancel</button>
           </div>
         </form>
@@ -736,7 +736,7 @@ export function MarketTargetDetailsPage() {
           <label className="grid gap-1 text-sm font-semibold">Central warehouse<select required className={inputClass} value={approve.centralWarehouseId} onChange={(e) => setApprove({ ...approve, centralWarehouseId: e.target.value })}><option value="">Select</option>{options.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
           <label className="grid gap-1 text-sm font-semibold">Notes<input className={inputClass} value={approve.notes} onChange={(e) => setApprove({ ...approve, notes: e.target.value })} /></label>
           <div className="flex gap-3 md:col-span-3">
-            <button disabled={approving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><CircleCheckBig className="h-4 w-4" /> {approving ? "Approving…" : "Approve and plan"}</button>
+            <button disabled={approving} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60" type="submit"><CircleCheckBig className="h-4 w-4" /> {approving ? "Approving…" : "Approve and plan"}</button>
             <button type="button" onClick={() => { setRejectError(""); setShowReject(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-600 hover:bg-red-100"><CircleX className="h-4 w-4" /> Reject</button>
           </div>
           {approveError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-3">{approveError}</p>}
@@ -828,7 +828,7 @@ export function TargetAdjustmentPage() {
         <label className="grid gap-1 text-sm font-semibold">Target item<select required className={inputClass} value={itemId} onChange={(e) => setItemId(e.target.value)}><option value="">Select item</option>{target?.items?.map((x) => <option key={x.id} value={x.id}>{x.product?.name ?? x.productId}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Adjustment %<input className={inputClass} type="number" step="0.01" value={adjustmentPercent} onChange={(e) => setAdjustmentPercent(e.target.value)} /></label>
         <label className="grid gap-1 text-sm font-semibold">Reason<input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:w-fit" type="submit"><RefreshCw className="h-4 w-4" /> {submitting ? "Adjusting…" : "Adjust target"}</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 app-button-primary disabled:opacity-60 md:w-fit" type="submit"><RefreshCw className="h-4 w-4" /> {submitting ? "Adjusting…" : "Adjust target"}</button>
         {submitError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-3">{submitError}</p>}
       </form>
     </>
@@ -890,7 +890,7 @@ export function ProductionPlanPage() {
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       <form onSubmit={calculate} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
         <label className="grid min-w-72 gap-1 text-sm font-semibold">Plan<select required className={inputClass} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">Select plan</option>{plans.map((x) => <option key={x.id} value={x.id}>{x.planNumber}</option>)}</select></label>
-        <button disabled={calculating} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><PackageCheck className="h-4 w-4" /> {calculating ? "Calculating…" : "Calculate MRP"}</button>
+        <button disabled={calculating} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60" type="submit"><PackageCheck className="h-4 w-4" /> {calculating ? "Calculating…" : "Calculate MRP"}</button>
         {message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}
         {calcError && <span className="text-sm font-semibold text-red-700">{calcError}</span>}
       </form>
@@ -972,7 +972,7 @@ export function MaterialRequirementPlanningPage() {
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       <form onSubmit={calculate} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
         <label className="grid min-w-72 gap-1 text-sm font-semibold">Production plan<select required className={inputClass} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">Select plan</option>{plans.map((x) => <option key={x.id} value={x.id}>{x.planNumber}</option>)}</select></label>
-        <button disabled={calculating} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><PackageCheck className="h-4 w-4" /> {calculating ? "Checking…" : "Run availability check"}</button>
+        <button disabled={calculating} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60" type="submit"><PackageCheck className="h-4 w-4" /> {calculating ? "Checking…" : "Run availability check"}</button>
         {calcError && <span className="text-sm font-semibold text-red-700">{calcError}</span>}
       </form>
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
@@ -1146,13 +1146,13 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
       {convert ? (
         <form onSubmit={convertOne} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
           <label className="grid min-w-80 gap-1 text-sm font-semibold">Recommendation<select required className={inputClass} value={recommendationId} onChange={(e) => setRecommendationId(e.target.value)}><option value="">Select recommendation</option>{rows.filter((r) => r.status === "OPEN").map((x) => <option key={x.id} value={x.id}>{x.rawMaterial?.name ?? x.rawMaterialId} - {number(x.recommendedQuantityKg)} kg</option>)}</select></label>
-          <button disabled={acting} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><ShoppingCart className="h-4 w-4" /> {acting ? "Converting…" : "Convert"}</button>
+          <button disabled={acting} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60" type="submit"><ShoppingCart className="h-4 w-4" /> {acting ? "Converting…" : "Convert"}</button>
           {message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}
         </form>
       ) : (
         <form onSubmit={generate} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
           <label className="grid min-w-80 gap-1 text-sm font-semibold">MRP run<select required className={inputClass} value={mrpId} onChange={(e) => setMrpId(e.target.value)}><option value="">Select an MRP run</option>{mrps.map((m) => <option key={m.id} value={m.id}>{m.mrpNumber} — {new Date(m.createdAt).toLocaleDateString("en-GH")} · shortage {number(m.totalShortageKg)} kg</option>)}</select></label>
-          <button disabled={acting} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><ShoppingCart className="h-4 w-4" /> {acting ? "Generating…" : "Generate recommendations"}</button>
+          <button disabled={acting} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60" type="submit"><ShoppingCart className="h-4 w-4" /> {acting ? "Generating…" : "Generate recommendations"}</button>
           {mrps.length === 0 && <span className="text-sm text-ink/50">No MRP runs yet — run one under Material Requirement Planning first.</span>}
         </form>
       )}
@@ -1278,7 +1278,7 @@ export function ProductionExecutionPage() {
           )}
         </label>
         <label className="grid gap-1 text-sm font-semibold">Wastage kg<input className={inputClass} type="number" min="0" step="0.01" value={form.wastageKg} onChange={(e) => setForm({ ...form, wastageKg: e.target.value })} /></label>
-        <div className="flex items-center gap-3 md:col-span-2"><button disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><Factory className="h-4 w-4" /> {submitting ? "Posting…" : "Post execution"}</button>{message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}</div>
+        <div className="flex items-center gap-3 md:col-span-2"><button disabled={submitting} className="inline-flex min-h-11 items-center gap-2 app-button-primary disabled:opacity-60" type="submit"><Factory className="h-4 w-4" /> {submitting ? "Posting…" : "Post execution"}</button>{message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}</div>
         {submitError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-2">{submitError}</p>}
       </form>
 

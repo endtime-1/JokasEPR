@@ -331,7 +331,7 @@ export default function DashboardPage() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
               Executive command
             </p>
-            <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+            <h1 className="mt-2 font-display tabular-nums text-[28px] font-extrabold leading-tight tracking-tight text-ink">
               Live Agribusiness Performance
             </h1>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink/55">
@@ -594,7 +594,7 @@ export default function DashboardPage() {
         {dashboardLoading ? (
           <div className="grid gap-3 xl:grid-cols-2" aria-hidden>
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-line bg-white p-4 shadow-card">
+              <div key={i} className="app-card p-4 shadow-card">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-5 w-16 rounded-full" />

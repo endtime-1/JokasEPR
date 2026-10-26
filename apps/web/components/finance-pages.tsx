@@ -25,7 +25,7 @@ type FinanceOptions = {
 
 const inputClass = "min-h-11 w-full rounded-md border border-line px-3 text-sm";
 const selectClass = "min-h-11 w-full rounded-md border border-line px-3 text-sm bg-white";
-const btnPrimary = "inline-flex min-h-10 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50";
+const btnPrimary = "inline-flex min-h-10 items-center gap-2 app-button-primary hover:opacity-90 disabled:opacity-50";
 const btnSecondary = "inline-flex min-h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field";
 
 function useFinanceOptions() {
@@ -304,7 +304,7 @@ export function FinanceDashboardPage() {
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money In</p>
             {!dash && loading
               ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
-              : <p className="mt-2 text-3xl font-bold leading-none text-emerald-400">{money(totalRevenue)}</p>
+              : <p className="mt-2 font-display tabular-nums text-3xl font-bold leading-none text-emerald-400">{money(totalRevenue)}</p>
             }
             <p className="mt-1.5 text-xs text-white/30">{Number(dash?.revenueCount ?? 0)} transactions</p>
             <Link href="/finance/revenue" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
@@ -316,7 +316,7 @@ export function FinanceDashboardPage() {
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money Out</p>
             {!dash && loading
               ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
-              : <p className="mt-2 text-3xl font-bold leading-none text-red-400">{money(totalExpenses)}</p>
+              : <p className="mt-2 font-display tabular-nums text-3xl font-bold leading-none text-red-400">{money(totalExpenses)}</p>
             }
             <p className="mt-1.5 text-xs text-white/30">{Number(dash?.expenseCount ?? 0)} transactions</p>
             <Link href="/finance/expenses" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
@@ -328,7 +328,7 @@ export function FinanceDashboardPage() {
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Net Position</p>
             {!dash && loading
               ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
-              : <p className={`mt-2 text-3xl font-bold leading-none ${isProfitable ? "text-emerald-400" : "text-red-400"}`}>{money(netProfit)}</p>
+              : <p className={`mt-2 font-display tabular-nums text-3xl font-bold leading-none ${isProfitable ? "text-emerald-400" : "text-red-400"}`}>{money(netProfit)}</p>
             }
             <p className={`mt-1.5 text-xs ${isProfitable ? "text-emerald-500/60" : "text-red-500/60"}`}>{profitMargin.toFixed(1)}% margin</p>
             <Link href="/finance/reports/profit-loss" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
@@ -349,7 +349,7 @@ export function FinanceDashboardPage() {
               <CircleArrowDown className="h-4 w-4 text-amber-600" />
             </span>
           </div>
-          {loading ? <div className="h-8 w-24 animate-pulse rounded-md bg-white/60" /> : <p className="text-3xl font-bold tracking-tight text-amber-800">{money(Number(dash?.accountsPayable ?? 0))}</p>}
+          {loading ? <div className="h-8 w-24 animate-pulse rounded-md bg-white/60" /> : <p className="font-display tabular-nums text-3xl font-bold tracking-tight text-amber-800">{money(Number(dash?.accountsPayable ?? 0))}</p>}
           <p className="mt-1 text-xs text-amber-600">{Number(dash?.accountsPayableCount ?? 0)} outstanding invoice{Number(dash?.accountsPayableCount ?? 0) !== 1 ? "s" : ""}</p>
           <Link href="/procurement/invoices" className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline">View invoices <ChevronRight className="h-3.5 w-3.5" /></Link>
         </div>
@@ -362,7 +362,7 @@ export function FinanceDashboardPage() {
               <CircleAlert className={`h-4 w-4 ${pendingCount > 0 ? "text-brand animate-pulse" : "text-slate-300"}`} />
             </span>
           </div>
-          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className={`text-3xl font-bold tracking-tight ${pendingCount > 0 ? "text-brandDark" : "text-slate-900"}`}>{pendingCount}</p>}
+          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className={`font-display tabular-nums text-3xl font-bold tracking-tight ${pendingCount > 0 ? "text-brandDark" : "text-slate-900"}`}>{pendingCount}</p>}
           <p className="mt-1 text-xs text-slate-400">Large expenses ≥ GHS 5,000</p>
           <Link href="/finance/expenses?status=PENDING_APPROVAL" className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">Review now <ChevronRight className="h-3.5 w-3.5" /></Link>
         </div>
@@ -375,20 +375,20 @@ export function FinanceDashboardPage() {
               {isProfitable ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
             </span>
           </div>
-          {loading ? <div className="h-8 w-24 animate-pulse rounded-md bg-white/60" /> : <p className={`text-3xl font-bold tracking-tight ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>{profitMargin.toFixed(1)}%</p>}
+          {loading ? <div className="h-8 w-24 animate-pulse rounded-md bg-white/60" /> : <p className={`font-display tabular-nums text-3xl font-bold tracking-tight ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>{profitMargin.toFixed(1)}%</p>}
           <p className={`mt-1 text-xs ${isProfitable ? "text-emerald-600" : "text-red-500"}`}>{money(netProfit)} net profit</p>
           <Link href="/finance/reports/profit-loss" className={`mt-4 inline-flex items-center gap-1 text-xs font-semibold hover:underline ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>P&amp;L report <ChevronRight className="h-3.5 w-3.5" /></Link>
         </div>
 
         {/* Revenue transactions */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="app-card p-5 shadow-sm">
           <div className="mb-3 flex items-start justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Revenue Entries</p>
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50">
               <CircleArrowUp className="h-4 w-4 text-emerald-500" />
             </span>
           </div>
-          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className="text-3xl font-bold tracking-tight text-slate-900">{Number(dash?.revenueCount ?? 0)}</p>}
+          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className="font-display tabular-nums text-3xl font-bold tracking-tight text-slate-900">{Number(dash?.revenueCount ?? 0)}</p>}
           <p className="mt-1 text-xs text-slate-400">Transactions this period</p>
           <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full bg-emerald-400" style={{ width: totalRevenue > 0 ? "100%" : "0%" }} />
@@ -397,14 +397,14 @@ export function FinanceDashboardPage() {
         </div>
 
         {/* Expense transactions */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="app-card p-5 shadow-sm">
           <div className="mb-3 flex items-start justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Expense Entries</p>
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-red-50">
               <CircleArrowDown className="h-4 w-4 text-red-400" />
             </span>
           </div>
-          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className="text-3xl font-bold tracking-tight text-slate-900">{Number(dash?.expenseCount ?? 0)}</p>}
+          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className="font-display tabular-nums text-3xl font-bold tracking-tight text-slate-900">{Number(dash?.expenseCount ?? 0)}</p>}
           <p className="mt-1 text-xs text-slate-400">Transactions this period</p>
           <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full bg-red-300" style={{ width: totalRevenue > 0 ? `${Math.min((totalExpenses / totalRevenue) * 100, 100)}%` : "0%" }} />
@@ -417,7 +417,7 @@ export function FinanceDashboardPage() {
       <div className="mb-5 grid gap-4 xl:grid-cols-3">
 
         {/* P&L bar chart */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+        <div className="app-card p-5 shadow-sm xl:col-span-2">
           <div className="mb-4 flex items-start justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Profit &amp; Loss</h3>
@@ -439,7 +439,7 @@ export function FinanceDashboardPage() {
         </div>
 
         {/* Expense donut */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="app-card p-5 shadow-sm">
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-slate-800">Expenses by Category</h3>
             <p className="text-xs text-slate-400">Last 6 months</p>
@@ -581,7 +581,7 @@ export function FinanceDashboardPage() {
               <Link
                 key={a.id as string}
                 href="/finance/bank-accounts"
-                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand/30 hover:shadow-md"
+                className="flex items-center gap-3 app-card p-4 shadow-sm transition hover:border-brand/30 hover:shadow-md"
               >
                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand/10">
                   <Landmark className="h-5 w-5 text-brand" aria-hidden />

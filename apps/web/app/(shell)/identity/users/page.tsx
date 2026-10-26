@@ -393,7 +393,7 @@ export default function UsersPage() {
             emptyLabel="No production sites found"
           />
         </FormField>
-        <button className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white xl:col-span-4">
+        <button className="flex min-h-11 items-center justify-center gap-2 app-button-primary xl:col-span-4">
           <Plus aria-hidden className="h-4 w-4" />
           Create user
         </button>
@@ -414,7 +414,7 @@ export default function UsersPage() {
             />
           </div>
           <div className="flex gap-2">
-            <button type="submit" disabled={savingRoles} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={savingRoles} className="inline-flex min-h-9 items-center gap-2 app-button-primary disabled:opacity-50">
               <ShieldCheck className="h-4 w-4" />
               {savingRoles ? "Saving…" : "Save roles"}
             </button>
@@ -463,7 +463,7 @@ export default function UsersPage() {
             </FormField>
           </div>
           <div className="flex gap-2">
-            <button type="submit" disabled={savingAccess} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={savingAccess} className="inline-flex min-h-9 items-center gap-2 app-button-primary disabled:opacity-50">
               <MapPin className="h-4 w-4" />
               {savingAccess ? "Saving…" : "Save access"}
             </button>
@@ -493,7 +493,7 @@ export default function UsersPage() {
             </FormField>
           </div>
           <div className="flex gap-2">
-            <button type="submit" disabled={savingUser} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+            <button type="submit" disabled={savingUser} className="inline-flex min-h-9 items-center gap-2 app-button-primary disabled:opacity-50">
               <Pencil className="h-4 w-4" />
               {savingUser ? "Saving…" : "Save changes"}
             </button>
