@@ -817,22 +817,58 @@ describe("SoyaProcessingService.createBatch — records which deliveries were us
 
   const dto = () => makeDto({ beanProductId: "prod-bean", oilProductId: "prod-oil", cakeProductId: "prod-cake" });
 
-  it("stores each delivery lot used (with kg) and costs the beans from those lots", async () => {
-    mockPrisma.product.findFirst.mockImplementation(({ where }: { where: { id: string } }) => Promise.resolve({ id: where.id, uomId: "uom-1", name: where.id === "prod-cake" ? "Local Soya" : "Item", sku: "X" }));
+  const prodMock = () => mockPrisma.product.findFirst.mockImplementation(({ where }: { where: { id: string } }) => Promise.resolve({ id: where.id, uomId: "uom-1", name: where.id === "prod-cake" ? "Local Soya" : "Item", sku: "X" }));
+
+  it("uses ONE delivery per run: with none chosen, the oldest delivery that can cover the whole run", async () => {
+    prodMock();
     mockTx.stockBatch.findMany.mockResolvedValue([
       { id: "lot-a", batchNumber: "RCPT-1", quantityRemaining: 60, unitCost: 4 },
       { id: "lot-b", batchNumber: "RCPT-2", quantityRemaining: 500, unitCost: 6 },
     ]);
-    mockTx.soyaBeanIntake.findMany.mockResolvedValue([{ id: "intake-1", receiptNumber: "RCPT-1" }, { id: "intake-2", receiptNumber: "RCPT-2" }]);
+    mockTx.soyaBeanIntake.findMany.mockResolvedValue([{ id: "intake-2", receiptNumber: "RCPT-2" }]);
 
     await makeService().createBatch(makeUser(), dto(), {});
 
     const lots = mockTx.soyaBatchLot.createMany.mock.calls[0][0].data;
+    expect(lots).toHaveLength(1);
+    expect(lots[0]).toEqual(expect.objectContaining({ intakeId: "intake-2", quantityKg: 100, unitCost: 6 }));
+    expect(mockTx.soyaProductionCost.create.mock.calls[0][0].data.rawBeanCost).toBe(600);
+  });
+
+  it("a delivery chosen on the form is used on its own, and the run is costed from it", async () => {
+    prodMock();
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({ unitCost: 4, receiptNumber: "RCPT-1", qualityStatus: "ACCEPTED" });
+    const lotA = { id: "lot-a", batchNumber: "RCPT-1", status: "AVAILABLE", quantityRemaining: 300, unitCost: 4 };
+    mockTx.stockBatch.findMany.mockImplementation((args: { where: { batchNumber?: string } }) => Promise.resolve(args.where.batchNumber ? [lotA] : [lotA, { id: "lot-b", batchNumber: "RCPT-2", quantityRemaining: 500, unitCost: 6 }]));
+    mockTx.soyaBeanIntake.findMany.mockResolvedValue([{ id: "intake-1", receiptNumber: "RCPT-1" }]);
+
+    await makeService().createBatch(makeUser(), makeDto({ intakeId: "11111111-1111-4111-8111-111111111111" }), {});
+
+    const lots = mockTx.soyaBatchLot.createMany.mock.calls[0][0].data;
+    expect(lots).toEqual([expect.objectContaining({ intakeId: "intake-1", quantityKg: 100, unitCost: 4 })]);
+    expect(mockTx.soyaProductionCost.create.mock.calls[0][0].data.rawBeanCost).toBe(400);
+  });
+
+  it("refuses to mix: a chosen delivery with too little left says how much it has and asks for a separate run", async () => {
+    prodMock();
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({ unitCost: 4, receiptNumber: "RCPT-1", qualityStatus: "ACCEPTED" });
+    const lotA = { id: "lot-a", batchNumber: "RCPT-1", status: "AVAILABLE", quantityRemaining: 60, unitCost: 4 };
+    mockTx.stockBatch.findMany.mockResolvedValue([lotA]);
+    await expect(makeService().createBatch(makeUser(), makeDto({ intakeId: "11111111-1111-4111-8111-111111111111" }), {})).rejects.toThrow(/only 60 kg left/);
+    expect(mockTx.soyaBatchLot.createMany).not.toHaveBeenCalled();
+  });
+
+  it("falls back to oldest-first only when no single delivery can cover the run", async () => {
+    prodMock();
+    mockTx.stockBatch.findMany.mockResolvedValue([
+      { id: "lot-a", batchNumber: "RCPT-1", quantityRemaining: 60, unitCost: 4 },
+      { id: "lot-b", batchNumber: "RCPT-2", quantityRemaining: 70, unitCost: 6 },
+    ]);
+    mockTx.soyaBeanIntake.findMany.mockResolvedValue([{ id: "intake-1", receiptNumber: "RCPT-1" }, { id: "intake-2", receiptNumber: "RCPT-2" }]);
+    await makeService().createBatch(makeUser(), dto(), {});
+    const lots = mockTx.soyaBatchLot.createMany.mock.calls[0][0].data;
     expect(lots).toHaveLength(2);
-    expect(lots[0]).toEqual(expect.objectContaining({ intakeId: "intake-1", quantityKg: 60, unitCost: 4 }));
-    expect(lots[1]).toEqual(expect.objectContaining({ intakeId: "intake-2", quantityKg: 40, unitCost: 6 }));
-    // 60 kg at 4 + 40 kg at 6 = 480 (not 100 x the single intake's price)
-    expect(mockTx.soyaProductionCost.create.mock.calls[0][0].data.rawBeanCost).toBe(480);
+    expect(mockTx.soyaProductionCost.create.mock.calls[0][0].data.rawBeanCost).toBe(60 * 4 + 40 * 6);
   });
 
   it("explains it when the beans needed are on hold instead of quietly under-recording", async () => {

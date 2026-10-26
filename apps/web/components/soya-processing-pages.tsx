@@ -24,6 +24,9 @@ type Option = {
   supplierName?: string;
   piecesPerUnit?: number;
   productId?: string;
+  remainingKg?: number | null;
+  onHold?: boolean;
+  analysisState?: string;
 };
 
 type SoyaOptions = {
@@ -305,6 +308,16 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const cakeWarehouseId = form.cakeWarehouseId || defaultWarehouse(/cake|local soya/i);
   const oilCandidates = useMemo(() => soyaProducts(options, "OIL"), [options]);
   const cakeCandidates = useMemo(() => soyaProducts(options, "CAKE"), [options]);
+  // Deliveries a run can use: still has beans, not on hold, not rejected. Oldest first, because
+  // that is the one to process next. A run uses ONE delivery so its oil and cake can be measured.
+  const deliveryChoices = useMemo(
+    () => options.intakes
+      .filter((i) => !i.onHold && i.analysisState !== "REJECTED" && (i.remainingKg == null || Number(i.remainingKg) > 0))
+      .slice()
+      .sort((a, b) => String((a as { receivedAt?: string }).receivedAt ?? "").localeCompare(String((b as { receivedAt?: string }).receivedAt ?? ""))),
+    [options]
+  );
+  const defaultIntake = deliveryChoices[0];
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ batchNumber: "", processingDate: "", notes: "" });
   const [editError, setEditError] = useState("");
@@ -375,7 +388,13 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
     setSubmitError("");
     // Beans come from the chosen intake's own product when there is one;
     // oil/cake are picked on the form (pre-filled with the best catalog match).
-    const intakeProductId = options.intakes.find((item) => item.id === form.intakeId)?.productId;
+    const chosenIntakeId = form.intakeId || defaultIntake?.id || "";
+    const chosen = options.intakes.find((item) => item.id === chosenIntakeId);
+    if (chosen && chosen.remainingKg != null && Number(form.beansUsedKg) > Number(chosen.remainingKg) + 0.0001) {
+      setSubmitError(`Delivery ${chosen.receiptNumber} has only ${number(chosen.remainingKg)} kg left. Record ${number(chosen.remainingKg)} kg as this run, and the rest as a separate run from the next delivery, so each delivery's oil and cake stay separate.`);
+      return;
+    }
+    const intakeProductId = chosen?.productId;
     const beanProductId = intakeProductId || soyaProducts(options, "BEANS")[0]?.id || "";
     const oilProductId = form.oilProductId || oilCandidates[0]?.id || "";
     const cakeProductId = form.cakeProductId || cakeCandidates[0]?.id || "";
@@ -393,7 +412,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           rawWarehouseId,
           oilWarehouseId,
           cakeWarehouseId,
-          intakeId: form.intakeId || undefined,
+          intakeId: chosenIntakeId || undefined,
           beanProductId,
           oilProductId,
           cakeProductId,
@@ -420,7 +439,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           <SelectField label="Raw warehouse" value={rawWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, rawWarehouseId: value })} />
           <SelectField label="Oil warehouse" value={oilWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, oilWarehouseId: value })} />
           <SelectField label="Cake warehouse" value={cakeWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, cakeWarehouseId: value })} />
-          <SelectField label="Use this delivery first (optional)" value={form.intakeId || ""} options={options.intakes.map((item) => ({ ...item, name: item.receiptNumber }))} onChange={(value) => setForm({ ...form, intakeId: value })} />
+          <SelectField label="Bean delivery (this run uses only this delivery)" value={form.intakeId || defaultIntake?.id || ""} options={deliveryChoices.map((item) => ({ ...item, name: `${item.receiptNumber} · ${item.supplierName}${item.remainingKg !== null && item.remainingKg !== undefined ? ` · ${number(item.remainingKg)} kg left` : ""}` }))} onChange={(value) => setForm({ ...form, intakeId: value })} />
           <SelectField label="Oil product" value={form.oilProductId || oilCandidates[0]?.id || ""} options={oilCandidates} onChange={(value) => setForm({ ...form, oilProductId: value })} />
           <SelectField label="Cake product" value={form.cakeProductId || cakeCandidates[0]?.id || ""} options={cakeCandidates} onChange={(value) => setForm({ ...form, cakeProductId: value })} />
           {[
@@ -1242,7 +1261,7 @@ export function SoyaDeliveryAnalysisPage() {
           </tbody>
         </table>
       </div>
-      <p className="mb-8 text-xs text-ink/55">Oil and cake are shared out to each delivery by the kg it supplied to each processing run. Runs posted before this feature don&apos;t record which delivery they used, so older deliveries show no processing here.</p>
+      <p className="mb-8 text-xs text-ink/55">Each processing run uses one delivery, so the oil and cake shown for a delivery are exactly what that delivery produced. Runs posted before this feature don&apos;t record which delivery they used, so older deliveries show no processing here.</p>
 
       <h3 className="mb-2 text-sm font-bold text-ink">By supplier</h3>
       <div className="overflow-x-auto rounded-md border border-line bg-white shadow-panel">

@@ -47,8 +47,14 @@ export function SoyaBatchScreen() {
   const cakeOptions: SelectOption[]  = useMemo(() => allProducts.filter((p) => !/hi-?pro/i.test(`${p.name} ${p.sku}`)).map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id })), [allProducts]);
   const intakeOptions: SelectOption[] = useMemo(
     () => [
-      { label: "— No intake linked —", value: "" },
-      ...(opts?.intakes ?? []).map((i) => ({ label: `${i.receiptNumber} · ${i.supplierName} · ${Number(i.quantityKg).toFixed(0)} kg`, value: i.id })),
+      { label: "— Oldest delivery that covers the run —", value: "" },
+      // One run uses ONE delivery. Deliveries on hold or rejected can't be used.
+      ...(opts?.intakes ?? [])
+        .filter((i) => !(i as { onHold?: boolean }).onHold && (i as { analysisState?: string }).analysisState !== "REJECTED")
+        .map((i) => {
+          const left = (i as { remainingKg?: number | null }).remainingKg;
+          return { label: `${i.receiptNumber} · ${i.supplierName} · ${left != null ? `${Number(left).toFixed(0)} kg left` : `${Number(i.quantityKg).toFixed(0)} kg`}`, value: i.id };
+        }),
     ],
     [opts]
   );
@@ -131,7 +137,7 @@ export function SoyaBatchScreen() {
           onChange={(v) => { setProductionSiteId(v); setErrors((e) => ({ ...e, productionSiteId: "" })); }}
           required error={errors.productionSiteId} placeholder="Select site…" />
 
-        <SelectField label="Linked Intake (optional)" value={intakeId} options={intakeOptions}
+        <SelectField label="Bean delivery (this run uses only this one)" value={intakeId} options={intakeOptions}
           onChange={setIntakeId} placeholder="Select bean intake receipt…" />
       </FormCard>
 
