@@ -269,12 +269,12 @@ export function FinanceDashboardPage() {
         </div>
       )}
       {/* ── Business Snapshot (QuickBooks-style hero) ────────────────────────── */}
-      <div className="mb-6 overflow-hidden rounded-2xl bg-sidebar shadow-panel">
+      <div className="mb-6 app-card overflow-hidden">
         {/* Header row: title + period tabs */}
         <div className="flex flex-wrap items-start justify-between gap-3 px-6 py-5">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Business Snapshot</p>
-            <p className="mt-0.5 text-sm text-white/55">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted">Business Snapshot</p>
+            <p className="mt-0.5 text-sm text-muted">
               {new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
             </p>
           </div>
@@ -288,7 +288,7 @@ export function FinanceDashboardPage() {
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value)}
-                className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${period === p.value ? "bg-brand text-white shadow-md" : "bg-white/10 text-white/55 hover:bg-white/20 hover:text-white"}`}
+                className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${period === p.value ? "bg-brand text-white shadow-md" : "bg-field text-muted hover:text-ink"}`}
               >
                 {p.label}
               </button>
@@ -298,39 +298,39 @@ export function FinanceDashboardPage() {
         </div>
 
         {/* Three big numbers */}
-        <div className="grid grid-cols-1 border-t border-white/10 sm:grid-cols-3">
+        <div className="grid grid-cols-1 border-t border-line sm:grid-cols-3">
           {/* Money In */}
-          <div className="border-b border-white/10 px-6 py-5 sm:border-b-0 sm:border-r">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money In</p>
+          <div className="border-b border-line px-6 py-5 sm:border-b-0 sm:border-r">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted">Money In</p>
             {!dash && loading
-              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
-              : <p className="mt-2 font-display tabular-nums text-3xl font-bold leading-none text-emerald-400">{money(totalRevenue)}</p>
+              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-ink/10" />
+              : <p className="mt-2 font-display tabular-nums text-3xl font-extrabold leading-none text-emerald-600">{money(totalRevenue)}</p>
             }
-            <p className="mt-1.5 text-xs text-white/30">{Number(dash?.revenueCount ?? 0)} transactions</p>
+            <p className="mt-1.5 text-xs text-muted">{Number(dash?.revenueCount ?? 0)} transactions</p>
             <Link href="/finance/revenue" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
               View revenue <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </div>
           {/* Money Out */}
-          <div className="border-b border-white/10 px-6 py-5 sm:border-b-0 sm:border-r">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money Out</p>
+          <div className="border-b border-line px-6 py-5 sm:border-b-0 sm:border-r">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted">Money Out</p>
             {!dash && loading
-              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
-              : <p className="mt-2 font-display tabular-nums text-3xl font-bold leading-none text-red-400">{money(totalExpenses)}</p>
+              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-ink/10" />
+              : <p className="mt-2 font-display tabular-nums text-3xl font-extrabold leading-none text-red-600">{money(totalExpenses)}</p>
             }
-            <p className="mt-1.5 text-xs text-white/30">{Number(dash?.expenseCount ?? 0)} transactions</p>
+            <p className="mt-1.5 text-xs text-muted">{Number(dash?.expenseCount ?? 0)} transactions</p>
             <Link href="/finance/expenses" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
               View expenses <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </div>
           {/* Net Position */}
           <div className="px-6 py-5">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Net Position</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted">Net Position</p>
             {!dash && loading
-              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
-              : <p className={`mt-2 font-display tabular-nums text-3xl font-bold leading-none ${isProfitable ? "text-emerald-400" : "text-red-400"}`}>{money(netProfit)}</p>
+              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-ink/10" />
+              : <p className={`mt-2 font-display tabular-nums text-3xl font-extrabold leading-none ${isProfitable ? "text-emerald-600" : "text-red-600"}`}>{money(netProfit)}</p>
             }
-            <p className={`mt-1.5 text-xs ${isProfitable ? "text-emerald-500/60" : "text-red-500/60"}`}>{profitMargin.toFixed(1)}% margin</p>
+            <p className={`mt-1.5 text-xs ${isProfitable ? "text-emerald-600" : "text-red-600"}`}>{profitMargin.toFixed(1)}% margin</p>
             <Link href="/finance/reports/profit-loss" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
               P&amp;L report <ChevronRight className="h-3.5 w-3.5" />
             </Link>

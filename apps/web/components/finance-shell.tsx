@@ -33,6 +33,7 @@ import {
 import { useAuth } from "./auth-context";
 import { BrandLogo } from "./brand-logo";
 import { NotificationBell } from "./notification-bell";
+import { ThemeToggle } from "./theme-toggle";
 
 // ─── Nav Config ──────────────────────────────────────────────────────────────
 
@@ -126,7 +127,7 @@ function NewButton() {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-xl border border-white/10 bg-[#1f2d45] shadow-2xl">
+          <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-xl border border-white/10 bg-sidebar shadow-2xl">
             {newActions.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
@@ -304,7 +305,7 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+      <div className="flex h-screen overflow-hidden bg-canvas text-ink">
         <aside className="hidden h-full w-60 shrink-0 flex-col overflow-y-auto bg-sidebar lg:flex xl:w-64">
           <div className="flex h-full flex-col px-3 py-5 gap-3">
             <div className="h-10 animate-pulse rounded-xl bg-white/10" />
@@ -316,8 +317,8 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-          <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-5 py-3.5 shadow-sm backdrop-blur-md lg:px-8">
-            <div className="h-5 w-40 animate-pulse rounded-md bg-slate-200" />
+          <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-surface/90 px-5 py-3.5 backdrop-blur-md lg:px-8">
+            <div className="h-5 w-40 animate-pulse rounded-md bg-ink/10" />
           </header>
           <main className="flex-1 px-5 py-6 lg:px-8">
             <FinanceHeaderContext.Provider value={setHeader}>{children}</FinanceHeaderContext.Provider>
@@ -333,7 +334,7 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-canvas text-ink">
 
       {/* ── Desktop sidebar ────────────────────────────────────────────────── */}
       <aside className="hidden h-full w-60 shrink-0 flex-col overflow-y-auto bg-sidebar lg:flex xl:w-64">
@@ -376,10 +377,10 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
 
         {/* Top header */}
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-5 py-3.5 shadow-sm backdrop-blur-md lg:px-8">
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-surface/90 px-5 py-3.5 backdrop-blur-md lg:px-8">
           {/* Mobile: hamburger */}
           <button
-            className="flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 lg:hidden"
+            className="flex items-center justify-center rounded-lg border border-line p-2 text-muted hover:bg-field lg:hidden"
             onClick={() => setMobileSidebarOpen(true)}
             aria-label="Open finance menu"
           >
@@ -396,8 +397,8 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
           {/* Page title */}
           {title && (
             <div className="min-w-0">
-              <h1 className="truncate text-base font-bold text-slate-900 lg:text-lg">{title}</h1>
-              {subtitle && <p className="hidden truncate text-xs text-slate-400 lg:block">{subtitle}</p>}
+              <h1 className="truncate text-base font-bold text-ink lg:text-lg">{title}</h1>
+              {subtitle && <p className="hidden truncate text-xs text-muted lg:block">{subtitle}</p>}
             </div>
           )}
 
@@ -408,6 +409,7 @@ export function FinanceShell({ children }: { children: React.ReactNode }) {
             <DollarSign className="h-3 w-3" />
             GHS
           </span>
+          <ThemeToggle />
           <NotificationBell />
         </header>
 

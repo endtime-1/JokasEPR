@@ -3,7 +3,7 @@
 import {
   ArrowLeftRight, BellRing, Bird, Boxes, ChartBar, CircleCheckBig, ClipboardList, Factory, FileDown, FileText,
   FlaskConical, HeartPulse, LayoutDashboard, MapPinned, PackageSearch, Receipt, ShoppingBag, ShoppingCart, Sprout, Store,
-  Target, Truck, Users, Bot, Wallet
+  Target, Truck, Users, Bot, Wallet, Wrench, Cpu, CalendarClock
 } from "lucide-react";
 import { ModuleNav, type ModuleNavGroup } from "./module-nav";
 
@@ -101,6 +101,18 @@ const PROCUREMENT_GROUPS: ModuleNavGroup[] = [
   { label: "Buying", icon: ShoppingCart, items: [
     { href: "/procurement/purchase-requests", label: "Requests" }, { href: "/procurement/purchase-orders", label: "Orders" }, { href: "/procurement/grns", label: "GRNs" } ] },
   { label: "Pay", icon: Wallet, items: [{ href: "/procurement/invoices", label: "Invoices" }, { href: "/procurement/payments", label: "Payments" }] },
+];
+
+export const MAINTENANCE_GROUPS: ModuleNavGroup[] = [
+  { label: "Overview", icon: LayoutDashboard, items: [{ href: "/maintenance", label: "Dashboard", exact: true }] },
+  { label: "Assets", icon: Cpu, items: [
+    { href: "/maintenance/machines", label: "Machines" }, { href: "/maintenance/equipment", label: "Equipment" },
+    { href: "/maintenance/spare-parts", label: "Spare parts" }, { href: "/maintenance/documents", label: "Documents" } ] },
+  { label: "Work", icon: Wrench, items: [
+    { href: "/maintenance/schedules", label: "PM schedules" }, { href: "/maintenance/breakdowns", label: "Breakdowns" },
+    { href: "/maintenance/assignments", label: "Assignments" }, { href: "/maintenance/records", label: "Records" } ] },
+  { label: "Time & cost", icon: CalendarClock, items: [
+    { href: "/maintenance/downtime", label: "Downtime" }, { href: "/maintenance/costs", label: "Costs" } ] },
 ];
 
 export function SalesNav() {
