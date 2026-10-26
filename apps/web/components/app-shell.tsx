@@ -7,6 +7,7 @@ import { useAuth } from "./auth-context";
 import { BrandLogo } from "./brand-logo";
 import { NotificationBell } from "./notification-bell";
 import { ThemeToggle } from "./theme-toggle";
+import { InstallAppButton } from "./install-app-button";
 import {
   AlertTriangle,
   BellRing,
@@ -661,6 +662,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Search aria-hidden className="h-4 w-4" />
               </button>
 
+              <InstallAppButton />
               <ThemeToggle />
               <NotificationBell />
             </div>

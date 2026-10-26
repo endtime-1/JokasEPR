@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
@@ -9,7 +9,16 @@ import { ChunkErrorHandler } from "../components/chunk-error-handler";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const display = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-display", display: "swap" });
 
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F5F4F0" },
+    { media: "(prefers-color-scheme: dark)", color: "#0E0D0B" }
+  ]
+};
+
 export const metadata: Metadata = {
+  applicationName: "Akoko ERP",
+  appleWebApp: { capable: true, title: "Akoko ERP", statusBarStyle: "default" },
   title: "AKOKO SOLUTIONS ERP",
   description: "AKOKO SOLUTIONS agribusiness ERP",
   icons: {

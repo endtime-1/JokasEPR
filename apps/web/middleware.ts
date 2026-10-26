@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/setup", "/_next", "/favicon.ico", "/api/", "/brand/", "/storefront"];
+const PUBLIC_PREFIXES = ["/login", "/setup", "/_next", "/favicon.ico", "/api/", "/brand/", "/manifest.webmanifest", "/storefront"];
 
 // (M11) A per-request nonce + 'strict-dynamic' was tried here to block inline
 // XSS payloads while letting Next's own hydration scripts run. It does NOT work
