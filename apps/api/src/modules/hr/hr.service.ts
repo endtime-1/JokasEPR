@@ -1,8 +1,9 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { Prisma, EmployeeStatus, TaskStatus, PayrollStatus, HRPerformanceStatus, LeaveStatus } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { LedgerService } from "../finance/ledger.service";
 import { EmailService } from "../notifications/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -106,6 +107,8 @@ export class HRService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly notifications: NotificationsService,
+    // Optional so unit tests can build the service without it; in the app it is always provided.
+    @Optional() private readonly ledger?: LedgerService,
   ) {}
 
   // This module had NO branch/farm/warehouse/site scoping anywhere — every
@@ -926,7 +929,12 @@ export class HRService {
     if (row.status !== "DRAFT") throw new BadRequestException("Only DRAFT records can be approved");
     if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a payroll record you created. A different manager must approve it.");
 
-    const updated = await this.prisma.payrollRecord.update({ where: { id }, data: { status: "APPROVED", updatedById: user.id } });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.payrollRecord.update({ where: { id }, data: { status: "APPROVED", updatedById: user.id } });
+      // Pay is a cost (and a debt to the employee and to the tax authorities) from the day it is approved.
+      await this.ledger?.payrollApproved(tx, { companyId: user.companyId, userId: user.id }, { id: u.id, reference: u.reference, employeeName: u.employeeName, period: u.period, grossPay: u.grossPay, taxDeduction: u.taxDeduction, ssnit: u.ssnit, netPay: u.netPay, date: u.periodEnd ?? new Date() });
+      return u;
+    });
     // C-BACK (2026-08-15): this and 2 sibling calls in this file (plus 3 in
     // duty-reminders.service.ts) used to pass the literal string "HR_MANAGE"
     // — broadcast()'s requiredPermission compares directly against the real
@@ -950,14 +958,23 @@ export class HRService {
     // a concurrent double-call used to both pass the "status !== APPROVED"
     // check before either write landed, each going on to create its own
     // Finance expense row for the same single payment.
-    const advanced = await this.prisma.payrollRecord.updateMany({
-      where: { id, status: "APPROVED" },
-      data: { status: "PAID", paymentDate: row.paymentDate ?? new Date(), updatedById: user.id },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const advanced = await tx.payrollRecord.updateMany({
+        where: { id, status: "APPROVED" },
+        data: { status: "PAID", paymentDate: row.paymentDate ?? new Date(), updatedById: user.id },
+      });
+      if (advanced.count === 0) {
+        throw new BadRequestException("Only APPROVED records can be marked as paid");
+      }
+      const u = await tx.payrollRecord.findUniqueOrThrow({ where: { id } });
+      if (this.ledger) {
+        const lctx = { companyId: user.companyId, userId: user.id };
+        // The cost first (older records were approved before the ledger existed), then the payment.
+        await this.ledger.payrollApproved(tx, lctx, { id: u.id, reference: u.reference, employeeName: u.employeeName, period: u.period, grossPay: u.grossPay, taxDeduction: u.taxDeduction, ssnit: u.ssnit, netPay: u.netPay, date: u.periodEnd ?? new Date() });
+        await this.ledger.payrollPaid(tx, lctx, { id: u.id, reference: u.reference, employeeName: u.employeeName, netPay: u.netPay, paymentDate: u.paymentDate ?? new Date(), paymentMethod: u.paymentMethod });
+      }
+      return u;
     });
-    if (advanced.count === 0) {
-      throw new BadRequestException("Only APPROVED records can be marked as paid");
-    }
-    const updated = await this.prisma.payrollRecord.findUniqueOrThrow({ where: { id } });
 
     // C-BACK (2026-08-15): this used to mirror the payment into Finance's
     // Expense table — but Finance's own markPayrollPaid never did the same,

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import {
   Prisma,
@@ -9,6 +9,7 @@ import {
   SupplierInvoiceStatus,
 } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { LedgerService } from "../finance/ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
@@ -47,7 +48,9 @@ export class ProcurementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly lookupCache: LookupCacheService
+    private readonly lookupCache: LookupCacheService,
+    // Optional so unit tests can build the service without it; in the app it is always provided.
+    @Optional() private readonly ledger?: LedgerService
   ) {}
 
   // â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1011,7 +1014,8 @@ export class ProcurementService {
     const reference = await nextRef(this.prisma, user.companyId, "SINV");
     const totalAmount = dto.subtotal + (dto.taxAmount ?? 0);
 
-    const row = await this.prisma.supplierInvoice.create({
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.supplierInvoice.create({
       data: {
         companyId: user.companyId,
         reference,
@@ -1028,6 +1032,10 @@ export class ProcurementService {
         notes: dto.notes,
         createdById: user.id,
       },
+      });
+      // Purchases up, what we owe the supplier up.
+      await this.ledger?.supplierInvoice(tx, { companyId: user.companyId, userId: user.id }, created);
+      return created;
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "SupplierInvoice", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
@@ -1117,6 +1125,8 @@ export class ProcurementService {
             createdById: user.id,
           },
         });
+        // Paying a supplier: what we owe goes down, bank/cash goes down.
+        await this.ledger?.supplierPayment(tx, { companyId: user.companyId, userId: user.id }, { id: row.id, reference: row.reference, paymentDate: row.paymentDate, amount: row.amount, method: row.paymentMethod }, "PROCUREMENT_PAYMENT");
 
         if (invoice) {
           const decremented = await tx.supplierInvoice.updateMany({

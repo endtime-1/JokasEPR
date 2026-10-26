@@ -5654,6 +5654,8 @@ model JournalEntry {
   lines   JournalEntryLine[]
 
   @@unique([companyId, reference])
+  // One automatic entry per business event (an invoice, a payment ...): a retry can never double-post it.
+  @@unique([companyId, sourceModule, sourceId])
   @@index([companyId])
   @@index([companyId, entryDate])
   @@index([companyId, status])

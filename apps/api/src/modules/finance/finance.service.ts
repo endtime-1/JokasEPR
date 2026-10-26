@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { ExpenseStatus, PayrollStatus, JournalEntryStatus } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
@@ -8,6 +8,8 @@ import { nextRef } from "../../common/next-ref";
 import { roundMoney } from "../../common/utils/money";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { createLimiter } from "../../common/concurrency-limit";
+import { LedgerService } from "./ledger.service";
+import type { LedgerBackfillService } from "./ledger-backfill.service";
 import {
   ApproveExpenseDto,
   ApprovePayrollDto,
@@ -53,7 +55,9 @@ export class FinanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly lookupCache: LookupCacheService
+    private readonly lookupCache: LookupCacheService,
+    // Optional so older unit tests can build the service without it; in the app it is always provided.
+    @Optional() private readonly ledger?: LedgerService
   ) {}
 
   // ─── Dashboard ─────────────────────────────────────────────────────────────
@@ -472,9 +476,13 @@ export class FinanceService {
     const requiresApproval = dto.amount >= LARGE_EXPENSE_THRESHOLD;
     const status = requiresApproval ? "PENDING_APPROVAL" : "PENDING";
 
+    // The category decides which expense account the cost is posted to.
+    const category = dto.categoryId ? await this.prisma.expenseCategory.findFirst({ where: { id: dto.categoryId, companyId: user.companyId, deletedAt: null }, select: { accountId: true } }) : null;
+
     let expense;
     try {
-      expense = await this.prisma.expense.create({
+      expense = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.expense.create({
         data: {
           companyId: user.companyId,
           reference,
@@ -494,6 +502,13 @@ export class FinanceService {
           submittedById: user.id,
           createdById: user.id
         }
+        });
+        // A small expense is final the moment it is recorded, so it goes straight into the books. A large one
+        // is posted when it is approved. Both happen in this same transaction.
+        if (!requiresApproval && this.ledger) {
+          await this.ledger.expense(tx, { companyId: user.companyId, userId: user.id }, { id: row.id, reference: row.reference, expenseDate: row.expenseDate, amount: row.amount, paymentMethod: row.paymentMethod, accountId: category?.accountId, description: row.description });
+        }
+        return row;
       });
     } catch (err: unknown) {
       // Same race-window reasoning as createCustomerPayment's own P2002
@@ -519,9 +534,16 @@ export class FinanceService {
     if (expense.status !== "PENDING_APPROVAL") throw new BadRequestException("Expense is not pending approval");
     if (expense.submittedById === user.id) throw new ForbiddenException("You cannot approve an expense you submitted yourself.");
 
-    const updated = await this.prisma.expense.update({
-      where: { id },
-      data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), notes: dto.notes ?? expense.notes, updatedById: user.id }
+    const category = await this.prisma.expenseCategory.findFirst({ where: { id: expense.categoryId, companyId: user.companyId }, select: { accountId: true } });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.expense.update({
+        where: { id },
+        data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), notes: dto.notes ?? expense.notes, updatedById: user.id }
+      });
+      if (this.ledger && !/^PRC-/.test(row.reference)) {
+        await this.ledger.expense(tx, { companyId: user.companyId, userId: user.id }, { id: row.id, reference: row.reference, expenseDate: row.expenseDate, amount: row.amount, paymentMethod: row.paymentMethod, accountId: category?.accountId, description: row.description });
+      }
+      return row;
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "APPROVE", entityType: "Expense", entityId: id, ...ctx });
     return { data: updated };
@@ -549,9 +571,14 @@ export class FinanceService {
     if (!["PENDING", "PENDING_APPROVAL", "APPROVED"].includes(expense.status)) throw new BadRequestException(`A ${expense.status.toLowerCase()} expense cannot be cancelled.`);
     if (/^PRC-/.test(expense.reference)) throw new BadRequestException("This expense was created automatically from a procurement payment. Cancel the payment in Procurement instead.");
     const note = `Cancelled: ${dto.reason}`;
-    const updated = await this.prisma.expense.update({
-      where: { id },
-      data: { status: "CANCELLED", notes: [expense.notes, note].filter(Boolean).join(" | ").slice(0, 500), updatedById: user.id }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.expense.update({
+        where: { id },
+        data: { status: "CANCELLED", notes: [expense.notes, note].filter(Boolean).join(" | ").slice(0, 500), updatedById: user.id }
+      });
+      // If it had been posted, offset it so the books and the expense list agree.
+      if (this.ledger) await this.ledger.expenseCancel(tx, { companyId: user.companyId, userId: user.id }, { id: expense.id, reference: expense.reference }, dto.reason);
+      return row;
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Expense", entityId: id, summary: `Cancelled expense ${expense.reference}: ${dto.reason}`, ...ctx });
     return { data: updated };
@@ -661,6 +688,7 @@ export class FinanceService {
             createdById: user.id
           }
         });
+        if (this.ledger) await this.ledger.supplierPayment(tx, { companyId: user.companyId, userId: user.id }, { id: row.id, reference: row.reference, paymentDate: row.paymentDate, amount: row.amount, method: row.paymentMethod }, "FIN_SUPPLIER_PAYMENT");
 
         if (invoice) {
           const decremented = await tx.supplierInvoice.updateMany({
@@ -757,6 +785,7 @@ export class FinanceService {
             createdById: user.id
           }
         });
+        if (this.ledger) await this.ledger.customerPayment(tx, { companyId: user.companyId, userId: user.id }, { id: row.id, reference: row.reference, paymentDate: row.paymentDate, amount: row.amount, method: row.paymentMethod, invoiceId: row.invoiceId }, "FIN_CUSTOMER_PAYMENT");
 
         if (invoice) {
           const decremented = await tx.invoice.updateMany({
@@ -869,9 +898,14 @@ export class FinanceService {
     if (record.status !== "DRAFT") throw new BadRequestException("Only DRAFT records can be approved");
     if (record.createdById === user.id) throw new ForbiddenException("You cannot approve a payroll record you created yourself.");
 
-    const updated = await this.prisma.payrollRecord.update({
-      where: { id },
-      data: { status: "APPROVED", paymentMethod: dto.paymentMethod, paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined, updatedById: user.id }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.payrollRecord.update({
+        where: { id },
+        data: { status: "APPROVED", paymentMethod: dto.paymentMethod, paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined, updatedById: user.id }
+      });
+      // Pay is a cost (and a debt to the employee and to the tax authorities) from the day it is approved.
+      if (this.ledger) await this.ledger.payrollApproved(tx, { companyId: user.companyId, userId: user.id }, { id: row.id, reference: row.reference, employeeName: row.employeeName, period: row.period, grossPay: row.grossPay, taxDeduction: row.taxDeduction, ssnit: row.ssnit, netPay: row.netPay, date: row.periodEnd ?? new Date() });
+      return row;
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "APPROVE", entityType: "PayrollRecord", entityId: id, ...ctx });
     return { data: updated };
@@ -882,7 +916,16 @@ export class FinanceService {
     if (!record) throw new NotFoundException("Payroll record not found");
     if (record.status !== "APPROVED") throw new BadRequestException("Only APPROVED records can be marked as paid");
 
-    const updated = await this.prisma.payrollRecord.update({ where: { id }, data: { status: "PAID", paymentDate: record.paymentDate ?? new Date(), updatedById: user.id } });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.payrollRecord.update({ where: { id }, data: { status: "PAID", paymentDate: record.paymentDate ?? new Date(), updatedById: user.id } });
+      if (this.ledger) {
+        const ctx2 = { companyId: user.companyId, userId: user.id };
+        // Make sure the cost is in the books first (older records were approved before the ledger existed), then the payment.
+        await this.ledger.payrollApproved(tx, ctx2, { id: row.id, reference: row.reference, employeeName: row.employeeName, period: row.period, grossPay: row.grossPay, taxDeduction: row.taxDeduction, ssnit: row.ssnit, netPay: row.netPay, date: row.periodEnd ?? new Date() });
+        await this.ledger.payrollPaid(tx, ctx2, { id: row.id, reference: row.reference, employeeName: row.employeeName, netPay: row.netPay, paymentDate: row.paymentDate ?? new Date(), paymentMethod: row.paymentMethod });
+      }
+      return row;
+    });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "PayrollRecord", entityId: id, ...ctx });
     return { data: updated };
   }
@@ -909,6 +952,7 @@ export class FinanceService {
     this.assertBranchAccess(user, dto.branchId);
     this.assertSaneDate(dto.transactionDate, "Transaction date");
     await this.assertOwned(user.companyId, { categoryId: dto.categoryId, branchId: dto.branchId });
+    const pettyCategory = dto.categoryId ? await this.prisma.expenseCategory.findFirst({ where: { id: dto.categoryId, companyId: user.companyId }, select: { accountId: true } }) : null;
     const reference = await nextRef(this.prisma, user.companyId, "PCT");
 
     // The running balance is derived from the *previous* transaction's
@@ -931,7 +975,7 @@ export class FinanceService {
 
         if (balance < 0) throw new BadRequestException("Insufficient petty cash balance");
 
-        return trx.pettyCashTransaction.create({
+        const created = await trx.pettyCashTransaction.create({
           data: {
             companyId: user.companyId,
             reference,
@@ -948,6 +992,8 @@ export class FinanceService {
             createdById: user.id
           }
         });
+        if (this.ledger) await this.ledger.pettyCash(trx, { companyId: user.companyId, userId: user.id }, { id: created.id, reference: created.reference, type: created.type, amount: created.amount, date: created.transactionDate, accountId: pettyCategory?.accountId, description: created.description });
+        return created;
       },
       { isolationLevel: "Serializable" }
     );
@@ -974,6 +1020,7 @@ export class FinanceService {
 
   async createJournalEntry(user: AuthenticatedUser, dto: CreateJournalEntryDto, ctx: RequestContext) {
     this.assertSaneDate(dto.entryDate, "Entry date");
+    if (this.ledger) await this.ledger.assertOpenPeriod(this.prisma, user.companyId, new Date(dto.entryDate));
     if (!dto.lines || dto.lines.length < 2) throw new BadRequestException("A journal entry needs at least two lines.");
     for (const [i, l] of dto.lines.entries()) {
       const debit = roundMoney(l.debit ?? 0);
@@ -1002,8 +1049,7 @@ export class FinanceService {
         type: dto.type,
         totalDebit,
         totalCredit,
-        sourceModule: dto.sourceModule,
-        sourceId: dto.sourceId,
+        // Automatic entries own the source markers; a manual entry never carries one.
         notes: dto.notes,
         createdById: user.id,
         lines: {
@@ -1026,6 +1072,7 @@ export class FinanceService {
     const entry = await this.prisma.journalEntry.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!entry) throw new NotFoundException("Journal entry not found");
     if (entry.status !== "DRAFT") throw new BadRequestException("Only DRAFT entries can be posted");
+    if (this.ledger) await this.ledger.assertOpenPeriod(this.prisma, user.companyId, entry.entryDate);
     // Whoever wrote the entry may not also post it: a second person must review it first.
     if (entry.createdById === user.id) throw new ForbiddenException("You cannot post a journal entry you created yourself. Ask a colleague to review and post it.");
 
@@ -1044,6 +1091,7 @@ export class FinanceService {
     if (!entry) throw new NotFoundException("Journal entry not found");
     if (entry.status !== "POSTED") throw new BadRequestException("Only POSTED entries can be reversed.");
     if (entry.type === "REVERSAL") throw new BadRequestException("A reversal entry cannot itself be reversed. Post a new entry instead.");
+    if (this.ledger) await this.ledger.assertOpenPeriod(this.prisma, user.companyId, new Date());
     const reference = await nextRef(this.prisma, user.companyId, "JE");
 
     const reversal = await this.prisma.$transaction(async (tx) => {
@@ -1295,6 +1343,43 @@ export class FinanceService {
       take: 100
     });
     return { data: payments };
+  }
+
+  // ─── General ledger reports ────────────────────────────────────────────────
+
+  async ledgerReport(user: AuthenticatedUser, kind: "trial-balance" | "income-statement" | "balance-sheet" | "general-ledger", q: { from?: string; to?: string; asOf?: string; accountId?: string }) {
+    if (!this.ledger) throw new BadRequestException("The ledger is not available.");
+    const date = (v?: string) => {
+      if (!v) return undefined;
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) throw new BadRequestException("That is not a valid date.");
+      return d;
+    };
+    const now = new Date();
+    if (kind === "trial-balance") return { data: await this.ledger.trialBalance(user.companyId, date(q.asOf)) };
+    if (kind === "balance-sheet") return { data: await this.ledger.balanceSheet(user.companyId, date(q.asOf) ?? now) };
+    if (kind === "income-statement") {
+      const to = date(q.to) ?? now;
+      const from = date(q.from) ?? new Date(Date.UTC(to.getUTCFullYear(), 0, 1));
+      if (from > to) throw new BadRequestException("The start date must be before the end date.");
+      return { data: await this.ledger.incomeStatement(user.companyId, from, to) };
+    }
+    if (!q.accountId) throw new BadRequestException("Choose an account.");
+    return { data: await this.ledger.generalLedger(user.companyId, q.accountId, date(q.from), date(q.to)) };
+  }
+
+  async setPeriodLock(user: AuthenticatedUser, lockedThrough: string | null, ctx: RequestContext) {
+    if (!this.ledger) throw new BadRequestException("The ledger is not available.");
+    const before = await this.ledger.getSettings(user.companyId);
+    const data = await this.ledger.setLockedThrough(user.companyId, user.id, lockedThrough);
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "FinanceSettings", entityId: user.companyId, summary: `Books closed through ${data.lockedThrough ?? "(open)"} (was ${before.lockedThrough ?? "open"})`, ...ctx });
+    return { data };
+  }
+
+  async runBackfill(user: AuthenticatedUser, backfill: LedgerBackfillService, commit: boolean, ctx: RequestContext) {
+    const data = await backfill.run({ companyId: user.companyId, userId: user.id }, commit);
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "LedgerBackfill", entityId: user.companyId, summary: `${commit ? "Posted" : "Previewed"} ${data.total} ledger entries from existing records`, ...ctx });
+    return { data };
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────

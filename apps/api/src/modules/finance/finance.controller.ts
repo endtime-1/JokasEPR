@@ -22,18 +22,27 @@ import {
   CreateSupplierPaymentDto,
   FinanceQueryDto,
   GenerateReportDto,
+  LedgerBackfillDto,
+  LedgerRangeQueryDto,
   RejectExpenseDto,
   ReverseJournalEntryDto,
+  SetPeriodLockDto,
   UpdateAccountDto,
   UpdateBankAccountDto,
   UpdateExpenseCategoryDto
 } from "./dto/finance.dto";
 import { FinanceService } from "./finance.service";
+import { LedgerService } from "./ledger.service";
+import { LedgerBackfillService } from "./ledger-backfill.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller("finance")
 export class FinanceController {
-  constructor(private readonly financeService: FinanceService) {}
+  constructor(
+    private readonly financeService: FinanceService,
+    private readonly ledger: LedgerService,
+    private readonly backfill: LedgerBackfillService
+  ) {}
 
   // ─── Dashboard & Options ───────────────────────────────────────────────────
 
@@ -251,6 +260,58 @@ export class FinanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   createPettyCash(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePettyCashTransactionDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.financeService.createPettyCashTransaction(user, dto, { ipAddress, userAgent });
+  }
+
+  // ─── General ledger (accrual books) ────────────────────────────────────────
+
+  @Get("ledger/trial-balance")
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  trialBalance(@CurrentUser() user: AuthenticatedUser, @Query() q: LedgerRangeQueryDto) {
+    return this.financeService.ledgerReport(user, "trial-balance", q);
+  }
+
+  @Get("ledger/income-statement")
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  incomeStatement(@CurrentUser() user: AuthenticatedUser, @Query() q: LedgerRangeQueryDto) {
+    return this.financeService.ledgerReport(user, "income-statement", q);
+  }
+
+  @Get("ledger/balance-sheet")
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  balanceSheet(@CurrentUser() user: AuthenticatedUser, @Query() q: LedgerRangeQueryDto) {
+    return this.financeService.ledgerReport(user, "balance-sheet", q);
+  }
+
+  @Get("ledger/account")
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  generalLedger(@CurrentUser() user: AuthenticatedUser, @Query() q: LedgerRangeQueryDto) {
+    return this.financeService.ledgerReport(user, "general-ledger", q);
+  }
+
+  @Get("ledger/health")
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  ledgerHealth(@CurrentUser() user: AuthenticatedUser) {
+    return this.ledger.health(user.companyId).then((data) => ({ data }));
+  }
+
+  @Get("ledger/settings")
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  ledgerSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.ledger.getSettings(user.companyId).then((data) => ({ data }));
+  }
+
+  @Patch("ledger/settings")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  setLedgerSettings(@CurrentUser() user: AuthenticatedUser, @Body() dto: SetPeriodLockDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.setPeriodLock(user, dto.lockedThrough ?? null, { ipAddress, userAgent });
+  }
+
+  // Posts the history that already exists (invoices, payments, bills, payroll ...) into the ledger.
+  // A dry run by default; it can be run again safely because every event posts at most once.
+  @Post("ledger/backfill")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  ledgerBackfill(@CurrentUser() user: AuthenticatedUser, @Body() dto: LedgerBackfillDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.runBackfill(user, this.backfill, dto.commit === true, { ipAddress, userAgent });
   }
 
   // ─── Journal Entries ───────────────────────────────────────────────────────

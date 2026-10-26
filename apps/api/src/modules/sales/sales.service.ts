@@ -1,7 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { PaymentMethod, Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { LedgerService } from "../finance/ledger.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
@@ -58,7 +59,9 @@ export class SalesService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    // Optional so unit tests can build the service without it; in the app it is always provided.
+    @Optional() private readonly ledger?: LedgerService
   ) {}
 
   async dashboard(user: AuthenticatedUser, query: SalesQueryDto) {
@@ -540,6 +543,7 @@ export class SalesService {
       for (const inv of order.invoices) {
         if (inv.status === "VOID") continue;
         await tx.invoice.update({ where: { id: inv.id }, data: { status: "VOID", balanceDue: 0, updatedById: user.id } });
+        await this.ledger?.salesInvoiceVoid(tx, { companyId: user.companyId, userId: user.id }, inv);
         const credit = await this.ensureCreditLimitTx(tx, order.customerId, order.branchId);
         await tx.$executeRaw`UPDATE CustomerCreditLimit SET currentBalance = GREATEST(0, currentBalance - ${Number(inv.totalAmount)}) WHERE id = ${credit.id}`;
         const refreshed = await tx.customerCreditLimit.findUniqueOrThrow({ where: { id: credit.id } });
@@ -634,6 +638,8 @@ export class SalesService {
       }));
       if (!order.invoices.length) {
         await this.addCustomerDebitTx(tx, order.customerId, order.branchId, invoice.id, Number(order.totalAmount), `Invoice ${invoice.invoiceNumber}`);
+        // Income is recognised when the invoice is issued (accrual): receivable up, sales up.
+        await this.ledger?.salesInvoice(tx, { companyId: user.companyId, userId: user.id }, invoice);
       }
       const updated = await tx.salesOrder.update({ where: { id: order.id }, data: { status: "APPROVED", updatedById: user.id } });
       return { order: updated, invoice };
@@ -761,6 +767,7 @@ export class SalesService {
       await tx.salesOrder.update({ where: { id: order.id }, data: { status: "FULFILLED", stockApprovedById: user.id, stockApprovedAt: new Date(), updatedById: user.id } });
       if (!existingInvoice) {
         await this.addCustomerDebitTx(tx, order.customerId, order.branchId, invoice.id, Number(order.totalAmount), `Invoice ${invoice.invoiceNumber}`);
+        await this.ledger?.salesInvoice(tx, { companyId: user.companyId, userId: user.id }, invoice);
       }
       return { invoice, deliveryNote };
     }), { label: "SalesOrder.approveStockRelease" });
@@ -1361,6 +1368,8 @@ export class SalesService {
       // costs nothing and makes "payment recorded" and "revenue recognised"
       // atomic. If it fails the whole payment rolls back and the user retries.
       await this.createSalesRevenueTx(tx, user, customer.name, payment, invoice?.invoiceNumber);
+      // Money in: bank/cash up; receivable down (or held as customer credit when it is not for an invoice).
+      await this.ledger?.customerPayment(tx, { companyId: user.companyId, userId: user.id }, { id: payment.id, reference: payment.paymentNumber, paymentDate: payment.paymentDate, amount: payment.amount, method: payment.method, invoiceId: invoice?.id });
       return { payment, receipt };
       });
     } catch (err: unknown) {
@@ -1530,6 +1539,9 @@ export class SalesService {
         createdById: user.id
       }
     });
+    // A counter sale is invoiced and paid in one step.
+    await this.ledger?.salesInvoice(tx, { companyId: user.companyId, userId: user.id }, invoice);
+    await this.ledger?.customerPayment(tx, { companyId: user.companyId, userId: user.id }, { id: payment.id, reference: payment.paymentNumber, paymentDate: payment.paymentDate, amount: payment.amount, method: payment.method, invoiceId: invoice.id });
     const revenue = await tx.revenue.create({
       data: {
         companyId: user.companyId,
@@ -1706,6 +1718,7 @@ export class SalesService {
       // overstated indefinitely. Capped at the invoice's own balance —
       // any excess still lands on the customer's overall credit via
       // addCustomerCreditTx above, same as before.
+      let appliedToInvoice = 0;
       if (salesReturn.salesOrderId) {
         const invoice = await tx.invoice.findFirst({ where: { salesOrderId: salesReturn.salesOrderId, companyId: user.companyId, deletedAt: null } });
         if (invoice && Number(invoice.balanceDue) > 0) {
@@ -1715,6 +1728,7 @@ export class SalesService {
             data: { balanceDue: { decrement: reduceBy }, updatedById: user.id }
           });
           if (invUpdate.count > 0) {
+            appliedToInvoice = reduceBy;
             const refreshed = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
             if (Number(refreshed.balanceDue) <= 0) {
               await tx.invoice.update({ where: { id: invoice.id }, data: { status: "PAID" } });
@@ -1722,6 +1736,8 @@ export class SalesService {
           }
         }
       }
+      // Sales taken back: revenue down; what reduced an invoice lowers the receivable, the rest is credit owed to the customer.
+      await this.ledger?.salesReturn(tx, { companyId: user.companyId, userId: user.id }, { id, date: new Date(), totalAmount, appliedToInvoice, label: product.sku });
 
       return tx.salesReturn.findUniqueOrThrow({ where: { id } });
     });

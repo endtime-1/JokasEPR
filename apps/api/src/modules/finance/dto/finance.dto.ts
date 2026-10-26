@@ -657,3 +657,35 @@ export class ReverseJournalEntryDto {
   @MaxLength(200)
   reason!: string;
 }
+
+export class LedgerRangeQueryDto {
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+
+  @IsOptional()
+  @IsDateString()
+  asOf?: string;
+
+  @IsOptional()
+  @IsUUID()
+  accountId?: string;
+}
+
+export class SetPeriodLockDto {
+  // Everything dated on or before this day becomes read-only. null reopens all periods.
+  @IsOptional()
+  @IsDateString()
+  lockedThrough?: string | null;
+}
+
+export class LedgerBackfillDto {
+  // Default is a dry run that only reports what would be posted.
+  @IsOptional()
+  @IsBoolean()
+  commit?: boolean;
+}
