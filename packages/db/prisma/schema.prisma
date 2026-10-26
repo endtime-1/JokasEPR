@@ -4736,6 +4736,9 @@ model SoyaBeanIntake {
   totalCost        Decimal           @db.Decimal(18, 4)
   moisturePercent  Decimal?          @db.Decimal(18, 4)
   qualityStatus    SoyaQualityStatus @default(PENDING)
+  decisionNote     String?           @db.VarChar(300)
+  decidedById      String?
+  decidedAt        DateTime?
   receivedAt       DateTime          @default(now())
   notes            String? @db.VarChar(500)
   idempotencyKey   String?           @db.VarChar(100)
@@ -4751,6 +4754,7 @@ model SoyaBeanIntake {
   warehouse         Warehouse             @relation(fields: [warehouseId], references: [id])
   product           Product               @relation("SoyaBeanProduct", fields: [productId], references: [id])
   processingBatches SoyaProcessingBatch[]
+  moistureReadings  SoyaMoistureReading[]
 
   @@unique([companyId, receiptNumber])
   @@unique([companyId, idempotencyKey])
@@ -4762,6 +4766,42 @@ model SoyaBeanIntake {
   @@index([companyId, qualityStatus])
   @@index([receivedAt])
   @@index([deletedAt])
+}
+
+// One moisture reading taken on a bean delivery (several can be taken per truck;
+// the delivery's moisturePercent is their average).
+model SoyaMoistureReading {
+  id              String    @id @default(uuid())
+  companyId       String
+  intakeId        String
+  moisturePercent Decimal   @db.Decimal(8, 2)
+  recordedById    String?
+  readAt          DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+
+  intake SoyaBeanIntake @relation(fields: [intakeId], references: [id])
+
+  @@index([companyId])
+  @@index([intakeId])
+}
+
+// Which bean delivery (stock lot) a processing run really used, and how many kg of it.
+model SoyaBatchLot {
+  id                String    @id @default(uuid())
+  companyId         String
+  productionBatchId String
+  intakeId          String?
+  stockBatchId      String?
+  receiptNumber     String?   @db.VarChar(80)
+  quantityKg        Decimal   @db.Decimal(18, 4)
+  unitCost          Decimal   @default(0) @db.Decimal(18, 4)
+  createdAt         DateTime  @default(now())
+  deletedAt         DateTime?
+
+  @@index([companyId])
+  @@index([productionBatchId])
+  @@index([intakeId])
 }
 
 model SoyaProcessingBatch {

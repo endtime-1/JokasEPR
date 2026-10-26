@@ -1,12 +1,14 @@
 import { AuthenticatedUser } from "@jokas/shared";
-import { SoyaProcessingService } from "./soya-processing.service";
+import { SoyaProcessingService, averageMoisture, moistureState } from "./soya-processing.service";
 
 const mockTx = {
   inventoryItem: { updateMany: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
-  soyaBeanIntake: { create: jest.fn(), update: jest.fn() },
+  soyaBeanIntake: { create: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  soyaMoistureReading: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  soyaBatchLot: { createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
   soyaProcessingBatch: { create: jest.fn(), update: jest.fn() },
   stockMovement: { create: jest.fn(), updateMany: jest.fn() },
-  stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+  stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityRemaining: 0 } }) },
   soyaOilOutput: { create: jest.fn(), update: jest.fn() },
   soyaCakeOutput: { create: jest.fn(), update: jest.fn() },
   soyaWasteRecord: { create: jest.fn(), update: jest.fn() },
@@ -21,7 +23,8 @@ const mockPrisma = {
   product: { findFirst: jest.fn() },
   warehouse: { findFirst: jest.fn().mockResolvedValue({ id: "wh", type: "GENERAL", name: "WH", code: "WH", branchId: "b" }) },
   inventoryItem: { findFirst: jest.fn() },
-  soyaBeanIntake: { findFirst: jest.fn(), update: jest.fn() },
+  soyaBeanIntake: { findFirst: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   soyaProcessingBatch: { findFirst: jest.fn(), update: jest.fn() },
   soyaQualityCheck: { findFirst: jest.fn(), update: jest.fn() },
   soyaInternalTransfer: { findFirst: jest.fn(), update: jest.fn() },
@@ -738,5 +741,110 @@ describe("SoyaProcessingService.updateSale / deleteSale", () => {
       data: { deletedAt: expect.any(Date), updatedById: "user-1", status: "CANCELLED" }
     });
     expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "DELETE", entityType: "SoyaSalesLink" }));
+  });
+});
+
+describe("soya delivery moisture", () => {
+  it("averages several readings and treats blank / 0 as not tested", () => {
+    expect(averageMoisture([12, 14])).toBe(13);
+    expect(averageMoisture([0])).toBeNull();
+    expect(averageMoisture([])).toBeNull();
+  });
+
+  it("works out the state against the limit; a manager decision overrides it", () => {
+    expect(moistureState(null, "PENDING", 13)).toBe("NOT_TESTED");
+    expect(moistureState(12.5, "ACCEPTED", 13)).toBe("WITHIN_LIMIT");
+    expect(moistureState(14.2, "PENDING", 13)).toBe("HELD");
+    expect(moistureState(14.2, "APPROVED", 13)).toBe("APPROVED_OVER_LIMIT");
+    expect(moistureState(12, "REJECTED", 13)).toBe("REJECTED");
+  });
+});
+
+describe("SoyaProcessingService.createIntake — moisture decides whether the delivery is held", () => {
+  const baseDto = { productionSiteId: "site-1", warehouseId: "wh", productId: "prod-bean", receiptNumber: "rcpt-9", supplierName: "Farmer A", quantityKg: 1000, unitCost: 5 };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.productionSite.findFirst.mockResolvedValue({ id: "site-1", branchId: "branch-1" });
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-bean", uomId: "uom-1" });
+    mockPrisma.systemSetting.findFirst.mockResolvedValue(null); // default limit 13%
+    mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-1" });
+    mockTx.soyaBeanIntake.create.mockResolvedValue({ id: "intake-9", receiptNumber: "RCPT-9" });
+  });
+
+  it("within the limit: the average is saved, the status is ACCEPTED and the lot stays available", async () => {
+    await makeService().createIntake(makeUser(), { ...baseDto, moistureReadings: [12, 12.6, 12.2] } as never, {});
+    const data = mockTx.soyaBeanIntake.create.mock.calls[0][0].data;
+    expect(data.moisturePercent).toBe(12.27);
+    expect(data.qualityStatus).toBe("ACCEPTED");
+    expect(mockTx.stockBatch.create.mock.calls[0][0].data.status).toBeUndefined();
+    expect(mockTx.soyaMoistureReading.createMany.mock.calls[0][0].data).toHaveLength(3);
+  });
+
+  it("above the limit: the delivery is held (lot quarantined) until a manager decides", async () => {
+    await makeService().createIntake(makeUser(), { ...baseDto, moistureReadings: [15, 14] } as never, {});
+    expect(mockTx.soyaBeanIntake.create.mock.calls[0][0].data.qualityStatus).toBe("PENDING");
+    expect(mockTx.stockBatch.create.mock.calls[0][0].data.status).toBe("QUARANTINED");
+  });
+
+  it("no reading (or a 0 from an old form) means not tested, not 0% moisture", async () => {
+    await makeService().createIntake(makeUser(), { ...baseDto, moisturePercent: 0 } as never, {});
+    const data = mockTx.soyaBeanIntake.create.mock.calls[0][0].data;
+    expect(data.moisturePercent).toBeUndefined();
+    expect(data.qualityStatus).toBe("PENDING");
+    expect(mockTx.soyaMoistureReading.createMany).not.toHaveBeenCalled();
+  });
+
+  it("uses the company's own moisture limit when one is set", async () => {
+    mockPrisma.systemSetting.findFirst.mockResolvedValue({ value: { maxMoisturePercent: 11 } });
+    await makeService().createIntake(makeUser(), { ...baseDto, moistureReadings: [12] } as never, {});
+    expect(mockTx.stockBatch.create.mock.calls[0][0].data.status).toBe("QUARANTINED");
+  });
+});
+
+describe("SoyaProcessingService.createBatch — records which deliveries were used", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.productionSite.findFirst.mockResolvedValue({ id: "site-1", branchId: "branch-1" });
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "p", uomId: "uom-1", name: "Local Soya", sku: "LS" });
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "inv-bean", quantityOnHand: 1000 });
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({ unitCost: 5, receiptNumber: "RCPT-1", qualityStatus: "ACCEPTED" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv" });
+    mockTx.soyaProcessingBatch.create.mockResolvedValue({ id: "batch-1", batchNumber: "SPB-TEST-001" });
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  const dto = () => makeDto({ beanProductId: "prod-bean", oilProductId: "prod-oil", cakeProductId: "prod-cake" });
+
+  it("stores each delivery lot used (with kg) and costs the beans from those lots", async () => {
+    mockPrisma.product.findFirst.mockImplementation(({ where }: { where: { id: string } }) => Promise.resolve({ id: where.id, uomId: "uom-1", name: where.id === "prod-cake" ? "Local Soya" : "Item", sku: "X" }));
+    mockTx.stockBatch.findMany.mockResolvedValue([
+      { id: "lot-a", batchNumber: "RCPT-1", quantityRemaining: 60, unitCost: 4 },
+      { id: "lot-b", batchNumber: "RCPT-2", quantityRemaining: 500, unitCost: 6 },
+    ]);
+    mockTx.soyaBeanIntake.findMany.mockResolvedValue([{ id: "intake-1", receiptNumber: "RCPT-1" }, { id: "intake-2", receiptNumber: "RCPT-2" }]);
+
+    await makeService().createBatch(makeUser(), dto(), {});
+
+    const lots = mockTx.soyaBatchLot.createMany.mock.calls[0][0].data;
+    expect(lots).toHaveLength(2);
+    expect(lots[0]).toEqual(expect.objectContaining({ intakeId: "intake-1", quantityKg: 60, unitCost: 4 }));
+    expect(lots[1]).toEqual(expect.objectContaining({ intakeId: "intake-2", quantityKg: 40, unitCost: 6 }));
+    // 60 kg at 4 + 40 kg at 6 = 480 (not 100 x the single intake's price)
+    expect(mockTx.soyaProductionCost.create.mock.calls[0][0].data.rawBeanCost).toBe(480);
+  });
+
+  it("explains it when the beans needed are on hold instead of quietly under-recording", async () => {
+    mockPrisma.product.findFirst.mockImplementation(({ where }: { where: { id: string } }) => Promise.resolve({ id: where.id, uomId: "uom-1", name: where.id === "prod-cake" ? "Local Soya" : "Item", sku: "X" }));
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "lot-a", batchNumber: "RCPT-1", quantityRemaining: 30, unitCost: 4 }]);
+    mockTx.stockBatch.aggregate.mockResolvedValue({ _sum: { quantityRemaining: 500 } });
+    await expect(makeService().createBatch(makeUser(), dto(), {})).rejects.toThrow(/on hold/);
+  });
+
+  it("will not process a rejected delivery", async () => {
+    mockPrisma.product.findFirst.mockImplementation(({ where }: { where: { id: string } }) => Promise.resolve({ id: where.id, uomId: "uom-1", name: where.id === "prod-cake" ? "Local Soya" : "Item", sku: "X" }));
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({ unitCost: 5, receiptNumber: "RCPT-1", qualityStatus: "REJECTED" });
+    await expect(makeService().createBatch(makeUser(), makeDto({ intakeId: "11111111-1111-4111-8111-111111111111" }), {})).rejects.toThrow(/rejected/);
   });
 });

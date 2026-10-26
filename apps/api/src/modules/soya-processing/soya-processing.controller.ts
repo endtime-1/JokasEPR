@@ -11,7 +11,10 @@ import {
   CreateSoyaProcessingBatchDto,
   CreateSoyaQualityCheckDto,
   CreateSoyaSaleDto,
+  RecordSoyaMoistureDto,
+  SoyaIntakeDecisionDto,
   SoyaQueryDto,
+  UpdateSoyaSettingsDto,
   UpdateSoyaBeanIntakeDto,
   UpdateSoyaInternalTransferDto,
   UpdateSoyaProcessingBatchDto,
@@ -42,6 +45,36 @@ export class SoyaProcessingController {
   @RequirePermissions(PERMISSIONS.SOYA_READ)
   intakes(@CurrentUser() user: AuthenticatedUser, @Query() query: SoyaQueryDto) {
     return this.soyaService.listIntakes(user, query);
+  }
+
+  @Get("settings")
+  @RequirePermissions(PERMISSIONS.SOYA_READ)
+  settings(@CurrentUser() user: AuthenticatedUser) {
+    return this.soyaService.getSettings(user);
+  }
+
+  @Patch("settings")
+  @RequirePermissions(PERMISSIONS.SOYA_MANAGE)
+  updateSettings(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateSoyaSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.updateSettings(user, dto, { ipAddress, userAgent });
+  }
+
+  @Get("intake-analysis")
+  @RequirePermissions(PERMISSIONS.SOYA_READ)
+  intakeAnalysis(@CurrentUser() user: AuthenticatedUser, @Query() query: SoyaQueryDto) {
+    return this.soyaService.intakeAnalysis(user, query);
+  }
+
+  @Post("intakes/:id/moisture")
+  @RequirePermissions(PERMISSIONS.SOYA_MANAGE)
+  recordMoisture(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: RecordSoyaMoistureDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.recordMoisture(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Post("intakes/:id/decision")
+  @RequirePermissions(PERMISSIONS.SOYA_MANAGE)
+  decideIntake(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: SoyaIntakeDecisionDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.decideIntake(user, id, dto, { ipAddress, userAgent });
   }
 
   @Get("intakes/:id")

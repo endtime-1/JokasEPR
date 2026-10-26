@@ -70,6 +70,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
       </div>
       <div className="flex flex-wrap gap-2">
         <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/soya-processing/intakes">Intakes</Link>
+        <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/soya-processing/delivery-analysis">Delivery analysis</Link>
         <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/soya-processing/batches">Batches</Link>
         <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/soya-processing/quality-control">QC</Link>
       </div>
@@ -123,7 +124,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/intakes"));
   const [loadError, setLoadError] = useState("");
-  const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantity: "", unit: "KG" as "KG" | "BAGS", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
+  const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantity: "", unit: "KG" as "KG" | "BAGS", unitCost: "", moisture: "", receivedAt: today() });
   const beanProducts = soyaProducts(options, "BEANS");
   const selectedBeanProduct = beanProducts.find((p) => p.id === (form.productId || beanProducts[0]?.id));
   // Product.piecesPerUnit doubles as a generic bulk-unit conversion factor
@@ -137,7 +138,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const quantityKg = form.unit === "BAGS" ? quantityNum * kgPerBag : quantityNum;
   const unitCostPerKg = form.unit === "BAGS" ? (Number(form.unitCost) || 0) / kgPerBag : (Number(form.unitCost) || 0);
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
-  const [editForm, setEditForm] = useState({ receiptNumber: "", supplierName: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: "", notes: "" });
+  const [editForm, setEditForm] = useState({ receiptNumber: "", supplierName: "", receivedAt: "", notes: "" });
   const [editError, setEditError] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
@@ -164,7 +165,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
     setSubmitting(true);
     setSubmitError("");
     try {
-      await apiFetch("/soya-processing/intakes", { method: "POST", body: JSON.stringify({ productionSiteId: form.productionSiteId || options.productionSites[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || beanProducts[0]?.id, receiptNumber: form.receiptNumber, supplierName: form.supplierName, quantityKg, unitCost: unitCostPerKg, moisturePercent: Number(form.moisturePercent || 0), qualityStatus: form.qualityStatus, receivedAt: form.receivedAt }) });
+      await apiFetch("/soya-processing/intakes", { method: "POST", body: JSON.stringify({ productionSiteId: form.productionSiteId || options.productionSites[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || beanProducts[0]?.id, receiptNumber: form.receiptNumber, supplierName: form.supplierName, quantityKg, unitCost: unitCostPerKg, moistureReadings: form.moisture.split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0), receivedAt: form.receivedAt }) });
       await load();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to save intake.");
@@ -178,8 +179,6 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
     setEditForm({
       receiptNumber: String(row.receiptNumber ?? ""),
       supplierName: String(row.supplierName ?? ""),
-      moisturePercent: String(row.moisturePercent ?? ""),
-      qualityStatus: String(row.qualityStatus ?? "APPROVED"),
       receivedAt: String(row.receivedAt ?? "").slice(0, 10),
       notes: String(row.notes ?? "")
     });
@@ -192,7 +191,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
     setSavingEdit(true);
     setEditError("");
     try {
-      await apiFetch(`/soya-processing/intakes/${editRow.id}`, { method: "PATCH", body: JSON.stringify({ receiptNumber: editForm.receiptNumber, supplierName: editForm.supplierName, moisturePercent: Number(editForm.moisturePercent || 0), qualityStatus: editForm.qualityStatus, receivedAt: editForm.receivedAt || undefined, notes: editForm.notes || undefined }) });
+      await apiFetch(`/soya-processing/intakes/${editRow.id}`, { method: "PATCH", body: JSON.stringify({ receiptNumber: editForm.receiptNumber, supplierName: editForm.supplierName, receivedAt: editForm.receivedAt || undefined, notes: editForm.notes || undefined }) });
       invalidateCache("/soya-processing/intakes", true);
       setEditRow(null);
       await load();
@@ -221,7 +220,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
 
   return (
     <>
-      <PageHeader title={create ? "Create Soya Bean Intake" : "Soya Bean Intakes"} subtitle="Record supplier, received quantity, cost, moisture, and intake quality status." />
+      <PageHeader title={create ? "Create Soya Bean Intake" : "Soya Bean Intakes"} subtitle="Record supplier, received quantity, cost and moisture readings for each bean delivery." />
       {optionsError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</p>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
@@ -248,7 +247,10 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
               <span className="text-[11px] text-ink/45">= {money(unitCostPerKg)}/kg</span>
             )}
           </FormField>
-          <FormField label="Moisture %"><input className={inputClass} type="number" value={form.moisturePercent} onChange={(event) => setForm({ ...form, moisturePercent: event.target.value })} /></FormField>
+          <FormField label="Moisture readings %">
+            <input className={inputClass} value={form.moisture} onChange={(event) => setForm({ ...form, moisture: event.target.value })} placeholder="e.g. 12.4, 12.8, 13.1" inputMode="decimal" />
+            <span className="text-[11px] text-ink/45">One reading per sample from the truck, separated by commas. Leave blank if not tested yet; you can add readings later under Delivery analysis. Above the moisture limit the delivery is held until a manager accepts it.</span>
+          </FormField>
           <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save intake"}</button>
           {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
         </form>
@@ -261,8 +263,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
           {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
           <FormField label="Receipt number"><input className={inputClass} value={editForm.receiptNumber} onChange={(event) => setEditForm({ ...editForm, receiptNumber: event.target.value })} required /></FormField>
           <FormField label="Supplier"><input className={inputClass} value={editForm.supplierName} onChange={(event) => setEditForm({ ...editForm, supplierName: event.target.value })} required /></FormField>
-          <FormField label="Moisture %"><input className={inputClass} type="number" value={editForm.moisturePercent} onChange={(event) => setEditForm({ ...editForm, moisturePercent: event.target.value })} /></FormField>
-          <FormField label="Quality status"><select className={inputClass} value={editForm.qualityStatus} onChange={(event) => setEditForm({ ...editForm, qualityStatus: event.target.value })}><option>PENDING</option><option>ACCEPTED</option><option>REJECTED</option><option>APPROVED</option></select></FormField>
+          <p className="text-xs text-ink/55">Moisture readings and the accept / reject decision are managed under <Link className="font-semibold text-brand" href="/soya-processing/delivery-analysis">Delivery analysis</Link>, so the history is kept.</p>
           <FormField label="Received date"><input className={inputClass} type="date" value={editForm.receivedAt} onChange={(event) => setEditForm({ ...editForm, receivedAt: event.target.value })} /></FormField>
           <FormField label="Notes"><input className={inputClass} value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })} /></FormField>
           <div className="flex gap-3">
@@ -419,7 +420,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           <SelectField label="Raw warehouse" value={rawWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, rawWarehouseId: value })} />
           <SelectField label="Oil warehouse" value={oilWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, oilWarehouseId: value })} />
           <SelectField label="Cake warehouse" value={cakeWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, cakeWarehouseId: value })} />
-          <SelectField label="Intake" value={form.intakeId || ""} options={options.intakes.map((item) => ({ ...item, name: item.receiptNumber }))} onChange={(value) => setForm({ ...form, intakeId: value })} />
+          <SelectField label="Use this delivery first (optional)" value={form.intakeId || ""} options={options.intakes.map((item) => ({ ...item, name: item.receiptNumber }))} onChange={(value) => setForm({ ...form, intakeId: value })} />
           <SelectField label="Oil product" value={form.oilProductId || oilCandidates[0]?.id || ""} options={oilCandidates} onChange={(value) => setForm({ ...form, oilProductId: value })} />
           <SelectField label="Cake product" value={form.cakeProductId || cakeCandidates[0]?.id || ""} options={cakeCandidates} onChange={(value) => setForm({ ...form, cakeProductId: value })} />
           {[
@@ -1124,3 +1125,170 @@ function SimpleRowsTable({ rows, loading, onEdit, onDelete, onApprove }: { rows:
   return <DataTable rows={auto.rows} empty="No records found" loading={loading} columns={columns} />;
 }
 
+// ─── Bean delivery analysis (moisture per delivery, held / accepted, yield per delivery) ───
+
+type DeliveryRow = {
+  id: string; receiptNumber: string; supplierName: string; receivedAt: string; quantityKg: number; unitCost: number;
+  moisturePercent: number | null; readings: number[]; qualityStatus: string; analysisState: string; decisionNote?: string | null;
+  processedKg: number; remainingKg: number; oilLitres: number; cakeKg: number; oilPer100Kg: number | null; cakeYieldPercent: number | null;
+};
+type SupplierRow = { supplierName: string; deliveries: number; quantityKg: number; avgMoisturePercent: number | null; overLimitOrHeld: number; rejected: number; oilPer100Kg: number | null; cakeYieldPercent: number | null };
+
+const STATE_BADGE: Record<string, { label: string; cls: string }> = {
+  WITHIN_LIMIT: { label: "Within limit", cls: "bg-green-100 text-green-800" },
+  HELD: { label: "On hold: too moist", cls: "bg-amber-100 text-amber-800" },
+  APPROVED_OVER_LIMIT: { label: "Accepted over limit", cls: "bg-blue-100 text-blue-800" },
+  REJECTED: { label: "Rejected", cls: "bg-red-100 text-red-800" },
+  NOT_TESTED: { label: "Not tested", cls: "bg-slate-100 text-slate-700" },
+};
+
+export function SoyaDeliveryAnalysisPage() {
+  const [data, setData] = useState<{ maxMoisturePercent: number; deliveries: DeliveryRow[]; suppliers: SupplierRow[] } | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [limitInput, setLimitInput] = useState("");
+  const [readingFor, setReadingFor] = useState<DeliveryRow | null>(null);
+  const [readingValue, setReadingValue] = useState("");
+  const [decisionFor, setDecisionFor] = useState<{ row: DeliveryRow; decision: "APPROVE" | "REJECT" } | null>(null);
+  const [decisionNote, setDecisionNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const r = await apiFetch<ApiEnvelope<{ maxMoisturePercent: number; deliveries: DeliveryRow[]; suppliers: SupplierRow[] }>>("/soya-processing/intake-analysis");
+    setData(r.data);
+    setLimitInput(String(r.data.maxMoisturePercent));
+  }
+  useEffect(() => { load().catch((e: any) => setError(e?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(!data, () => void load());
+
+  async function saveLimit() {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await apiFetch("/soya-processing/settings", { method: "PATCH", body: JSON.stringify({ maxMoisturePercent: Number(limitInput) }) });
+      setNotice("Moisture limit saved. It applies to new readings; deliveries already decided keep their status.");
+      await load();
+    } catch (e: any) { setError(e?.message ?? "Could not save the limit."); } finally { setBusy(false); }
+  }
+
+  async function addReading(e: FormEvent) {
+    e.preventDefault();
+    if (!readingFor) return;
+    setBusy(true); setError("");
+    try {
+      await apiFetch(`/soya-processing/intakes/${readingFor.id}/moisture`, { method: "POST", body: JSON.stringify({ moisturePercent: Number(readingValue) }) });
+      setReadingFor(null); setReadingValue("");
+      await load();
+    } catch (err: any) { setError(err?.message ?? "Could not save the reading."); } finally { setBusy(false); }
+  }
+
+  async function decide(e: FormEvent) {
+    e.preventDefault();
+    if (!decisionFor) return;
+    setBusy(true); setError("");
+    try {
+      await apiFetch(`/soya-processing/intakes/${decisionFor.row.id}/decision`, { method: "POST", body: JSON.stringify({ decision: decisionFor.decision, note: decisionNote }) });
+      setDecisionFor(null); setDecisionNote("");
+      await load();
+    } catch (err: any) { setError(err?.message ?? "Could not save the decision."); } finally { setBusy(false); }
+  }
+
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-GB");
+
+  return (
+    <>
+      <PageHeader title="Bean Delivery Analysis" subtitle="Moisture for each bean delivery, which deliveries were processed, and what each one yielded." />
+      {error && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {notice && <p className="mb-4 rounded-md bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</p>}
+
+      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-md border border-line bg-white p-4 shadow-panel">
+        <FormField label="Hold deliveries with average moisture above (%)">
+          <input className={inputClass} type="number" min={1} max={40} step="0.1" value={limitInput} onChange={(e) => setLimitInput(e.target.value)} />
+        </FormField>
+        <button onClick={saveLimit} disabled={busy || !limitInput} className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">Save limit</button>
+        <p className="max-w-md text-xs text-ink/55">A delivery above the limit is held: its beans can&apos;t be processed until a manager accepts it (for example after drying) or rejects it.</p>
+      </div>
+
+      <h3 className="mb-2 text-sm font-bold text-ink">Deliveries</h3>
+      <div className="mb-8 overflow-x-auto rounded-md border border-line bg-white shadow-panel">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-field text-xs uppercase text-ink/60">
+            <tr><th className="px-3 py-2">Receipt</th><th className="px-3 py-2">Supplier</th><th className="px-3 py-2">Received</th><th className="px-3 py-2 text-right">Kg</th><th className="px-3 py-2">Moisture</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Processed kg</th><th className="px-3 py-2 text-right">Left kg</th><th className="px-3 py-2 text-right">Oil L / 100 kg</th><th className="px-3 py-2 text-right">Cake %</th><th className="px-3 py-2">Actions</th></tr>
+          </thead>
+          <tbody>
+            {(data?.deliveries ?? []).map((d) => {
+              const b = STATE_BADGE[d.analysisState] ?? STATE_BADGE.NOT_TESTED;
+              return (
+                <tr key={d.id} className="border-t border-line align-top">
+                  <td className="px-3 py-2 font-medium">{d.receiptNumber}</td>
+                  <td className="px-3 py-2">{d.supplierName}</td>
+                  <td className="px-3 py-2">{fmtDate(d.receivedAt)}</td>
+                  <td className="px-3 py-2 text-right">{number(d.quantityKg)}</td>
+                  <td className="px-3 py-2">{d.moisturePercent !== null ? <><b>{d.moisturePercent}%</b><span className="block text-[11px] text-ink/50">{d.readings.length} reading(s): {d.readings.join(", ")}</span></> : "-"}</td>
+                  <td className="px-3 py-2"><span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${b.cls}`}>{b.label}</span>{d.decisionNote && <span className="block text-[11px] italic text-ink/55">&ldquo;{d.decisionNote}&rdquo;</span>}</td>
+                  <td className="px-3 py-2 text-right">{number(d.processedKg)}</td>
+                  <td className="px-3 py-2 text-right">{number(d.remainingKg)}</td>
+                  <td className="px-3 py-2 text-right">{d.oilPer100Kg ?? "-"}</td>
+                  <td className="px-3 py-2 text-right">{d.cakeYieldPercent !== null ? `${d.cakeYieldPercent}%` : "-"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap space-x-1">
+                    {d.analysisState !== "REJECTED" && <button onClick={() => { setReadingFor(d); setReadingValue(""); setError(""); }} className="rounded border border-line px-2 py-1 text-xs font-medium hover:bg-field">+ Reading</button>}
+                    {(d.analysisState === "HELD" || d.analysisState === "REJECTED") && <button onClick={() => { setDecisionFor({ row: d, decision: "APPROVE" }); setDecisionNote(""); setError(""); }} className="rounded border border-green-300 px-2 py-1 text-xs font-semibold text-green-700 hover:bg-green-50">Accept</button>}
+                    {d.analysisState === "HELD" && <button onClick={() => { setDecisionFor({ row: d, decision: "REJECT" }); setDecisionNote(""); setError(""); }} className="rounded border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>}
+                  </td>
+                </tr>
+              );
+            })}
+            {data && data.deliveries.length === 0 && <tr><td colSpan={11} className="px-3 py-6 text-center text-ink/50">No bean deliveries yet.</td></tr>}
+            {!data && !error && <tr><td colSpan={11} className="px-3 py-6 text-center text-ink/50">Loading…</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <p className="mb-8 text-xs text-ink/55">Oil and cake are shared out to each delivery by the kg it supplied to each processing run. Runs posted before this feature don&apos;t record which delivery they used, so older deliveries show no processing here.</p>
+
+      <h3 className="mb-2 text-sm font-bold text-ink">By supplier</h3>
+      <div className="overflow-x-auto rounded-md border border-line bg-white shadow-panel">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-field text-xs uppercase text-ink/60">
+            <tr><th className="px-3 py-2">Supplier</th><th className="px-3 py-2 text-right">Deliveries</th><th className="px-3 py-2 text-right">Kg</th><th className="px-3 py-2 text-right">Avg moisture</th><th className="px-3 py-2 text-right">Too moist</th><th className="px-3 py-2 text-right">Rejected</th><th className="px-3 py-2 text-right">Oil L / 100 kg</th><th className="px-3 py-2 text-right">Cake %</th></tr>
+          </thead>
+          <tbody>
+            {(data?.suppliers ?? []).map((sp) => (
+              <tr key={sp.supplierName} className="border-t border-line">
+                <td className="px-3 py-2 font-medium">{sp.supplierName}</td>
+                <td className="px-3 py-2 text-right">{sp.deliveries}</td>
+                <td className="px-3 py-2 text-right">{number(sp.quantityKg)}</td>
+                <td className="px-3 py-2 text-right">{sp.avgMoisturePercent !== null ? `${sp.avgMoisturePercent}%` : "-"}</td>
+                <td className="px-3 py-2 text-right">{sp.overLimitOrHeld}</td>
+                <td className="px-3 py-2 text-right">{sp.rejected}</td>
+                <td className="px-3 py-2 text-right">{sp.oilPer100Kg ?? "-"}</td>
+                <td className="px-3 py-2 text-right">{sp.cakeYieldPercent !== null ? `${sp.cakeYieldPercent}%` : "-"}</td>
+              </tr>
+            ))}
+            {data && data.suppliers.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-ink/50">No suppliers yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal open={!!readingFor} onClose={() => setReadingFor(null)} title={`Add moisture reading: ${readingFor?.receiptNumber ?? ""}`}>
+        <form onSubmit={addReading} className="grid gap-4">
+          <FormField label="Moisture %"><input className={inputClass} type="number" min={0.1} max={100} step="0.1" value={readingValue} onChange={(e) => setReadingValue(e.target.value)} required autoFocus /></FormField>
+          <p className="text-xs text-ink/55">Each reading is kept. The delivery&apos;s moisture is the average of all its readings.</p>
+          <div className="flex gap-3">
+            <button className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? "Saving…" : "Save reading"}</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setReadingFor(null)}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={!!decisionFor} onClose={() => setDecisionFor(null)} title={`${decisionFor?.decision === "APPROVE" ? "Accept" : "Reject"} delivery ${decisionFor?.row.receiptNumber ?? ""}`}>
+        <form onSubmit={decide} className="grid gap-4">
+          <p className="text-sm text-ink/70">{decisionFor?.decision === "APPROVE" ? "The beans become available for processing." : "The beans stay blocked and can't be processed."} Average moisture: <b>{decisionFor?.row.moisturePercent ?? "-"}%</b>.</p>
+          <FormField label="Reason *"><input className={inputClass} value={decisionNote} onChange={(e) => setDecisionNote(e.target.value)} minLength={3} maxLength={300} required placeholder={decisionFor?.decision === "APPROVE" ? "e.g. Dried again, re-tested at 12.5%" : "e.g. Mouldy, returned to supplier"} /></FormField>
+          <div className="flex gap-3">
+            <button className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? "Saving…" : decisionFor?.decision === "APPROVE" ? "Accept delivery" : "Reject delivery"}</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setDecisionFor(null)}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+    </>
+  );
+}

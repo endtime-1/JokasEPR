@@ -13,19 +13,41 @@ import {
   CreateSoyaProcessingBatchDto,
   CreateSoyaQualityCheckDto,
   CreateSoyaSaleDto,
+  RecordSoyaMoistureDto,
+  SoyaIntakeDecisionDto,
   SoyaQueryDto,
   UpdateSoyaBeanIntakeDto,
   UpdateSoyaInternalTransferDto,
   UpdateSoyaProcessingBatchDto,
   UpdateSoyaQualityCheckDto,
   UpdateSoyaQualityStatusDto,
-  UpdateSoyaSaleDto
+  UpdateSoyaSaleDto,
+  UpdateSoyaSettingsDto
 } from "./dto/soya-processing.dto";
 
 type RequestContext = {
   ipAddress?: string;
   userAgent?: string;
 };
+
+// Deliveries above this average moisture are held until a manager decides (the owner can change it).
+export const DEFAULT_MAX_MOISTURE_PERCENT = 13;
+
+export type MoistureState = "NOT_TESTED" | "WITHIN_LIMIT" | "HELD" | "APPROVED_OVER_LIMIT" | "REJECTED";
+
+export function averageMoisture(readings: number[]): number | null {
+  const good = readings.filter((r) => Number.isFinite(r) && r > 0);
+  if (good.length === 0) return null;
+  return Math.round((good.reduce((a, b) => a + b, 0) / good.length) * 100) / 100;
+}
+
+// REJECTED and an over-limit APPROVED are manager decisions; everything else follows the readings.
+export function moistureState(avg: number | null, status: string, limit: number): MoistureState {
+  if (status === "REJECTED") return "REJECTED";
+  if (avg === null) return "NOT_TESTED";
+  if (avg <= limit) return "WITHIN_LIMIT";
+  return status === "APPROVED" ? "APPROVED_OVER_LIMIT" : "HELD";
+}
 
 @Injectable()
 export class SoyaProcessingService {
@@ -172,22 +194,158 @@ export class SoyaProcessingService {
     return result;
   }
 
+  private async maxMoisture(companyId: string): Promise<number> {
+    const row = await this.prisma.systemSetting.findFirst({ where: { companyId, key: "soya.settings", deletedAt: null }, select: { value: true } });
+    const v = Number(((row?.value ?? {}) as { maxMoisturePercent?: number }).maxMoisturePercent);
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_MAX_MOISTURE_PERCENT;
+  }
+
+  async getSettings(user: AuthenticatedUser) {
+    return { data: { maxMoisturePercent: await this.maxMoisture(user.companyId) } };
+  }
+
+  async updateSettings(user: AuthenticatedUser, dto: UpdateSoyaSettingsDto, context: RequestContext) {
+    const existing = await this.prisma.systemSetting.findFirst({ where: { companyId: user.companyId, key: "soya.settings", deletedAt: null } });
+    const value = { maxMoisturePercent: dto.maxMoisturePercent };
+    if (existing) await this.prisma.systemSetting.update({ where: { id: existing.id }, data: { value: value as never, updatedById: user.id } });
+    else await this.prisma.systemSetting.create({ data: { companyId: user.companyId, key: "soya.settings", value: value as never, description: "Soya processing settings", createdById: user.id } });
+    await this.writeAudit(user, "UPDATE", "SystemSetting", existing?.id ?? "soya.settings", `Set the soya bean moisture limit to ${dto.maxMoisturePercent}%`, context, {});
+    return { data: value };
+  }
+
+  private withMoisture<T extends { moisturePercent: unknown; qualityStatus: string; moistureReadings?: { moisturePercent: unknown; readAt: Date }[] }>(row: T, limit: number) {
+    const avg = row.moisturePercent !== null && row.moisturePercent !== undefined && Number(row.moisturePercent) > 0 ? Number(row.moisturePercent) : null;
+    return { ...row, maxMoisturePercent: limit, analysisState: moistureState(avg, row.qualityStatus, limit) };
+  }
+
   async getIntake(user: AuthenticatedUser, id: string) {
     const data = await this.prisma.soyaBeanIntake.findFirst({
       where: { ...this.intakeWhere(user, {}), id },
-      include: { product: { select: { name: true, sku: true } }, warehouse: { select: { name: true, code: true } }, productionSite: { select: { name: true, code: true } } }
+      include: { product: { select: { name: true, sku: true } }, warehouse: { select: { name: true, code: true } }, productionSite: { select: { name: true, code: true } }, moistureReadings: { where: { deletedAt: null }, orderBy: { readAt: "asc" } } }
     });
     if (!data) throw new NotFoundException("Soya bean intake was not found.");
-    return { data };
+    return { data: this.withMoisture(data, await this.maxMoisture(user.companyId)) };
   }
 
   async listIntakes(user: AuthenticatedUser, query: SoyaQueryDto) {
-    const data = await this.prisma.soyaBeanIntake.findMany({
-      where: this.intakeWhere(user, query),
-      include: { product: { select: { name: true, sku: true } }, warehouse: { select: { name: true, code: true } }, productionSite: { select: { name: true, code: true } } },
-      orderBy: { receivedAt: "desc" }
+    const [rows, limit] = await Promise.all([
+      this.prisma.soyaBeanIntake.findMany({
+        where: this.intakeWhere(user, query),
+        include: { product: { select: { name: true, sku: true } }, warehouse: { select: { name: true, code: true } }, productionSite: { select: { name: true, code: true } }, moistureReadings: { where: { deletedAt: null }, orderBy: { readAt: "asc" } } },
+        orderBy: { receivedAt: "desc" }
+      }),
+      this.maxMoisture(user.companyId),
+    ]);
+    return { data: rows.map((r) => this.withMoisture(r, limit)) };
+  }
+
+  // Quarantines (held = true) or releases the stock lot a delivery created. A held lot is
+  // skipped by FIFO consumption, so held beans can't be processed until a manager decides.
+  private async setLotHeld(db: Prisma.TransactionClient | PrismaService, companyId: string, intake: { warehouseId: string; productId: string; receiptNumber: string }, held: boolean) {
+    await db.stockBatch.updateMany({
+      where: { companyId, warehouseId: intake.warehouseId, productId: intake.productId, batchNumber: intake.receiptNumber.toUpperCase(), deletedAt: null, status: held ? "AVAILABLE" : "QUARANTINED" },
+      data: { status: held ? "QUARANTINED" : "AVAILABLE" },
     });
-    return { data };
+  }
+
+  // Adds one moisture reading to a delivery, re-averages, and applies the limit
+  // (unless a manager already accepted or rejected it).
+  async recordMoisture(user: AuthenticatedUser, id: string, dto: RecordSoyaMoistureDto, context: RequestContext) {
+    const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { ...this.intakeWhere(user, {}), id } });
+    if (!intake) throw new NotFoundException("Soya bean intake was not found.");
+    this.assertProductionSiteAccess(user, intake.productionSiteId);
+    this.assertWarehouseAccess(user, intake.warehouseId);
+    const limit = await this.maxMoisture(user.companyId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.soyaMoistureReading.create({ data: { companyId: user.companyId, intakeId: id, moisturePercent: dto.moisturePercent, recordedById: user.id } });
+      const readings = await tx.soyaMoistureReading.findMany({ where: { intakeId: id, deletedAt: null }, select: { moisturePercent: true } });
+      const avg = averageMoisture(readings.map((r) => Number(r.moisturePercent)));
+      const manual = intake.qualityStatus === "REJECTED" || intake.qualityStatus === "APPROVED";
+      const status = manual ? intake.qualityStatus : avg !== null && avg <= limit ? "ACCEPTED" : "PENDING";
+      await tx.soyaBeanIntake.update({ where: { id }, data: { moisturePercent: avg ?? undefined, qualityStatus: status, updatedById: user.id } });
+      if (!manual && avg !== null) await this.setLotHeld(tx, user.companyId, intake, avg > limit);
+    });
+    await this.writeAudit(user, "UPDATE", "SoyaBeanIntake", id, `Recorded moisture ${dto.moisturePercent}% on ${intake.receiptNumber}`, context, { branchId: intake.branchId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId });
+    return this.getIntake(user, id);
+  }
+
+  // A manager accepts a held delivery (e.g. after drying) or rejects it. The reason is kept.
+  async decideIntake(user: AuthenticatedUser, id: string, dto: SoyaIntakeDecisionDto, context: RequestContext) {
+    const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { ...this.intakeWhere(user, {}), id } });
+    if (!intake) throw new NotFoundException("Soya bean intake was not found.");
+    this.assertProductionSiteAccess(user, intake.productionSiteId);
+    this.assertWarehouseAccess(user, intake.warehouseId);
+    const approve = dto.decision === "APPROVE";
+    await this.prisma.$transaction(async (tx) => {
+      await tx.soyaBeanIntake.update({ where: { id }, data: { qualityStatus: approve ? "APPROVED" : "REJECTED", decisionNote: dto.note, decidedById: user.id, decidedAt: new Date(), updatedById: user.id } });
+      await this.setLotHeld(tx, user.companyId, intake, !approve);
+    });
+    await this.writeAudit(user, approve ? "APPROVE" : "REJECT", "SoyaBeanIntake", id, `${approve ? "Accepted" : "Rejected"} bean delivery ${intake.receiptNumber}: ${dto.note}`, context, { branchId: intake.branchId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId });
+    return this.getIntake(user, id);
+  }
+
+  // Per-delivery analysis: moisture, how much has been processed, and the oil and cake that
+  // delivery actually yielded (each run's output shared out by the kg it took from the delivery).
+  async intakeAnalysis(user: AuthenticatedUser, query: SoyaQueryDto) {
+    const limit = await this.maxMoisture(user.companyId);
+    const intakes = await this.prisma.soyaBeanIntake.findMany({
+      where: this.intakeWhere(user, query),
+      include: { moistureReadings: { where: { deletedAt: null }, orderBy: { readAt: "asc" } } },
+      orderBy: { receivedAt: "desc" },
+      take: 300,
+    });
+    const ids = intakes.map((i) => i.id);
+    const lots = ids.length ? await this.prisma.soyaBatchLot.findMany({ where: { companyId: user.companyId, deletedAt: null, intakeId: { in: ids } } }) : [];
+    const batchIds = [...new Set(lots.map((l) => l.productionBatchId))];
+    const batches = batchIds.length
+      ? await this.prisma.soyaProcessingBatch.findMany({
+          where: { id: { in: batchIds }, deletedAt: null },
+          select: { id: true, beansUsedKg: true, oilOutputs: { where: { deletedAt: null }, select: { quantityLitres: true } }, cakeOutputs: { where: { deletedAt: null }, select: { quantityKg: true } } },
+        })
+      : [];
+    const batchById = new Map(batches.map((b) => [b.id, b]));
+    const rows = intakes.map((i) => {
+      let processedKg = 0, oilLitres = 0, cakeKg = 0;
+      for (const lot of lots.filter((l) => l.intakeId === i.id)) {
+        const b = batchById.get(lot.productionBatchId);
+        if (!b) continue;
+        const kg = Number(lot.quantityKg);
+        const share = Number(b.beansUsedKg) > 0 ? kg / Number(b.beansUsedKg) : 0;
+        processedKg += kg;
+        oilLitres += share * b.oilOutputs.reduce((a, o) => a + Number(o.quantityLitres), 0);
+        cakeKg += share * b.cakeOutputs.reduce((a, o) => a + Number(o.quantityKg), 0);
+      }
+      const qty = Number(i.quantityKg);
+      const avg = Number(i.moisturePercent) > 0 ? Number(i.moisturePercent) : null;
+      return {
+        id: i.id, receiptNumber: i.receiptNumber, supplierName: i.supplierName, receivedAt: i.receivedAt, quantityKg: qty, unitCost: Number(i.unitCost),
+        moisturePercent: avg, readings: i.moistureReadings.map((r) => Number(r.moisturePercent)), qualityStatus: i.qualityStatus,
+        analysisState: moistureState(avg, i.qualityStatus, limit), decisionNote: i.decisionNote,
+        processedKg: Math.round(processedKg * 100) / 100, remainingKg: Math.max(0, Math.round((qty - processedKg) * 100) / 100),
+        oilLitres: Math.round(oilLitres * 100) / 100, cakeKg: Math.round(cakeKg * 100) / 100,
+        oilPer100Kg: processedKg > 0 ? Math.round((oilLitres / processedKg) * 10000) / 100 : null,
+        cakeYieldPercent: processedKg > 0 ? Math.round((cakeKg / processedKg) * 10000) / 100 : null,
+      };
+    });
+    const bySupplier = new Map<string, { supplierName: string; deliveries: number; quantityKg: number; moistureSum: number; moistureN: number; held: number; rejected: number; processedKg: number; oilLitres: number; cakeKg: number }>();
+    for (const r of rows) {
+      const k = r.supplierName.trim().toLowerCase();
+      const s = bySupplier.get(k) ?? { supplierName: r.supplierName, deliveries: 0, quantityKg: 0, moistureSum: 0, moistureN: 0, held: 0, rejected: 0, processedKg: 0, oilLitres: 0, cakeKg: 0 };
+      s.deliveries += 1; s.quantityKg += r.quantityKg;
+      if (r.moisturePercent !== null) { s.moistureSum += r.moisturePercent; s.moistureN += 1; }
+      if (r.analysisState === "HELD" || r.analysisState === "APPROVED_OVER_LIMIT") s.held += 1;
+      if (r.analysisState === "REJECTED") s.rejected += 1;
+      s.processedKg += r.processedKg; s.oilLitres += r.oilLitres; s.cakeKg += r.cakeKg;
+      bySupplier.set(k, s);
+    }
+    const suppliers = [...bySupplier.values()].map((s) => ({
+      supplierName: s.supplierName, deliveries: s.deliveries, quantityKg: Math.round(s.quantityKg),
+      avgMoisturePercent: s.moistureN ? Math.round((s.moistureSum / s.moistureN) * 100) / 100 : null,
+      overLimitOrHeld: s.held, rejected: s.rejected,
+      oilPer100Kg: s.processedKg > 0 ? Math.round((s.oilLitres / s.processedKg) * 10000) / 100 : null,
+      cakeYieldPercent: s.processedKg > 0 ? Math.round((s.cakeKg / s.processedKg) * 10000) / 100 : null,
+    }));
+    return { data: { maxMoisturePercent: limit, deliveries: rows, suppliers } };
   }
 
   async createIntake(user: AuthenticatedUser, dto: CreateSoyaBeanIntakeDto, context: RequestContext) {
@@ -205,6 +363,13 @@ export class SoyaProcessingService {
     const site = await this.getProductionSite(user.companyId, dto.productionSiteId);
     const product = await this.getProduct(user.companyId, dto.productId);
     const totalCost = dto.quantityKg * dto.unitCost;
+    // The delivery's moisture is the average of the readings taken on it. A blank or 0
+    // reading means "not tested" (it used to be saved as 0%).
+    const readings = (dto.moistureReadings ?? (dto.moisturePercent !== undefined ? [dto.moisturePercent] : [])).filter((r) => r > 0);
+    const avgMoisture = averageMoisture(readings);
+    const moistureLimit = await this.maxMoisture(user.companyId);
+    const held = avgMoisture !== null && avgMoisture > moistureLimit;
+    const derivedStatus = avgMoisture === null ? "PENDING" : held ? "PENDING" : "ACCEPTED";
     let data;
     try {
       data = await this.prisma.$transaction(async (tx) => {
@@ -225,8 +390,8 @@ export class SoyaProcessingService {
           quantityKg: dto.quantityKg,
           unitCost: dto.unitCost,
           totalCost,
-          moisturePercent: dto.moisturePercent,
-          qualityStatus: dto.qualityStatus ?? "PENDING",
+          moisturePercent: avgMoisture ?? undefined,
+          qualityStatus: derivedStatus,
           receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : new Date(),
           notes: dto.notes,
           idempotencyKey: dto.idempotencyKey,
@@ -238,7 +403,10 @@ export class SoyaProcessingService {
       // every soya SKU reported $0 valuation and could never trigger an
       // expiry alert regardless of real stock level or age. Recording one
       // here (and on the oil/cake outputs in createBatch below) closes that.
-      await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, farmId: null, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, productId: dto.productId, inventoryItemId: inventory.id, uomId: product.uomId, batchNumber: dto.receiptNumber.toUpperCase(), quantityReceived: dto.quantityKg, quantityRemaining: dto.quantityKg, unitCost: dto.unitCost, createdById: user.id } });
+      // A delivery over the moisture limit is created held (QUARANTINED) so it can't be processed
+      // until a manager accepts it.
+      await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, farmId: null, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, productId: dto.productId, inventoryItemId: inventory.id, uomId: product.uomId, batchNumber: dto.receiptNumber.toUpperCase(), quantityReceived: dto.quantityKg, quantityRemaining: dto.quantityKg, unitCost: dto.unitCost, status: held ? "QUARANTINED" : undefined, createdById: user.id } });
+      if (readings.length) await tx.soyaMoistureReading.createMany({ data: readings.map((r) => ({ companyId: user.companyId, intakeId: intake.id, moisturePercent: r, recordedById: user.id })) });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.productId, inventoryItemId: inventory.id, toWarehouseId: dto.warehouseId, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, uomId: product.uomId, movementType: "PURCHASE_RECEIPT", quantity: dto.quantityKg, unitCost: dto.unitCost, referenceType: "SoyaBeanIntake", referenceId: intake.id, notes: `Soya beans received from ${dto.supplierName}`, createdById: user.id } });
       return intake;
       });
@@ -269,8 +437,8 @@ export class SoyaProcessingService {
       data: {
         receiptNumber: dto.receiptNumber ? dto.receiptNumber.toUpperCase() : undefined,
         supplierName: dto.supplierName,
-        moisturePercent: dto.moisturePercent,
-        qualityStatus: dto.qualityStatus,
+        // moisture and status are NOT edited here any more: add readings (POST intakes/:id/moisture)
+        // and the accept / reject decision (POST intakes/:id/decision) so the history is kept.
         receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
         notes: dto.notes,
         updatedById: user.id
@@ -377,19 +545,24 @@ export class SoyaProcessingService {
     }
     // M10: intakeId previously had no ownership check at all — a cross-tenant
     // or nonexistent id would be stored on the batch with no error.
+    let preferredReceipt: string | undefined;
     if (dto.intakeId) {
       const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { id: dto.intakeId, companyId: user.companyId, deletedAt: null } });
       if (!intake) throw new NotFoundException("Soya bean intake was not found.");
+      if (intake.qualityStatus === "REJECTED") throw new BadRequestException(`Delivery ${intake.receiptNumber} was rejected and can't be processed.`);
+      preferredReceipt = intake.receiptNumber?.toUpperCase();
     }
     const batchNumber = dto.batchNumber?.toUpperCase() ?? (await nextRef(this.prisma, user.companyId, "SPB"));
     // M10: previously always costed from the most-recently-received intake
     // regardless of dto.intakeId, so a batch linked to an older/cheaper (or
     // pricier) intake got the wrong COGS whenever multiple intakes existed
     // at different prices.
-    const rawBeanCost = await this.rawBeanCost(user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg, dto.intakeId);
-    const totalCost = rawBeanCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
-    const oilCost = totalCost * 0.42;
-    const cakeCost = totalCost * 0.58;
+    const estimatedBeanCost = await this.rawBeanCost(user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg, dto.intakeId);
+    // These are re-worked inside the transaction from the deliveries actually used.
+    let rawBeanCost = estimatedBeanCost;
+    let totalCost = rawBeanCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
+    let oilCost = totalCost * 0.42;
+    let cakeCost = totalCost * 0.58;
 
     let data;
     try {
@@ -400,7 +573,14 @@ export class SoyaProcessingService {
       // deadlock risk from the previous (opposite) order.
       // H3: best-effort FIFO consumption of bean StockBatch lots — see
       // consumeStockBatchesFifo for why this doesn't hard-block on shortfall.
-      await this.consumeStockBatchesFifo(tx, user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg);
+      const consumed = await this.consumeBeanLots(tx, user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg, preferredReceipt);
+      // Cost the beans from the deliveries really used (when the lots cover the whole quantity).
+      if (consumed.costedQty >= dto.beansUsedKg * 0.9999) {
+        rawBeanCost = consumed.costTotal;
+        totalCost = rawBeanCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
+        oilCost = totalCost * 0.42;
+        cakeCost = totalCost * 0.58;
+      }
       // M10: floor-guarded updateMany prevents concurrent overdraw at the DB
       // level — the pre-check above is a plain read, so a race between two
       // concurrent requests could otherwise both pass it and both decrement.
@@ -413,6 +593,13 @@ export class SoyaProcessingService {
       }
       const batch = await tx.soyaProcessingBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, intakeId: dto.intakeId, beanProductId: dto.beanProductId, batchNumber, beansUsedKg: dto.beansUsedKg, processingDate: dto.processingDate ? new Date(dto.processingDate) : new Date(), status: dto.status ?? "POSTED", idempotencyKey: dto.idempotencyKey, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.beanProductId, inventoryItemId: beanInventory.id, fromWarehouseId: dto.rawWarehouseId, productionSiteId: site.id, uomId: beanProduct.uomId, movementType: "PRODUCTION_INPUT", quantity: dto.beansUsedKg, unitCost: rawBeanCost / dto.beansUsedKg, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Soya beans issued for ${batch.batchNumber}`, createdById: user.id } });
+      // Remember exactly which deliveries this run used, so yield can be reported per delivery.
+      if (consumed.lots.length) {
+        const receipts = [...new Set(consumed.lots.map((l) => l.batchNumber).filter((n): n is string => !!n))];
+        const intakes = receipts.length ? await tx.soyaBeanIntake.findMany({ where: { companyId: user.companyId, productId: dto.beanProductId, warehouseId: dto.rawWarehouseId, receiptNumber: { in: receipts }, deletedAt: null }, select: { id: true, receiptNumber: true } }) : [];
+        const intakeByReceipt = new Map(intakes.map((i) => [i.receiptNumber.toUpperCase(), i.id]));
+        await tx.soyaBatchLot.createMany({ data: consumed.lots.map((l) => ({ companyId: user.companyId, productionBatchId: batch.id, intakeId: l.batchNumber ? intakeByReceipt.get(l.batchNumber.toUpperCase()) : undefined, stockBatchId: l.stockBatchId, receiptNumber: l.batchNumber, quantityKg: l.kg, unitCost: l.unitCost })) });
+      }
 
       const oilInventory = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.oilWarehouseId, productId: dto.oilProductId } }, update: { deletedAt: null, quantityOnHand: { increment: dto.oilProducedLitres }, updatedById: user.id }, create: { companyId: user.companyId, branchId: site.branchId, warehouseId: dto.oilWarehouseId, productionSiteId: site.id, productId: dto.oilProductId, uomId: oilProduct.uomId, quantityOnHand: dto.oilProducedLitres, createdById: user.id } });
       const cakeInventory = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.cakeWarehouseId, productId: dto.cakeProductId } }, update: { deletedAt: null, quantityOnHand: { increment: dto.cakeProducedKg }, updatedById: user.id }, create: { companyId: user.companyId, branchId: site.branchId, warehouseId: dto.cakeWarehouseId, productionSiteId: site.id, productId: dto.cakeProductId, uomId: cakeProduct.uomId, quantityOnHand: dto.cakeProducedKg, createdById: user.id } });
@@ -487,6 +674,12 @@ export class SoyaProcessingService {
         if (beanInventory) {
           await tx.inventoryItem.update({ where: { id: beanInventory.id }, data: { quantityOnHand: { increment: beansUsedKg }, updatedById: user.id } });
         }
+      }
+      // Put the beans back into the exact delivery lots they came from.
+      const usedLots = await tx.soyaBatchLot.findMany({ where: { productionBatchId: batch.id, deletedAt: null } });
+      for (const lot of usedLots) {
+        if (lot.stockBatchId) await tx.stockBatch.updateMany({ where: { id: lot.stockBatchId, companyId: user.companyId }, data: { quantityRemaining: { increment: Number(lot.quantityKg) } } });
+        await tx.soyaBatchLot.update({ where: { id: lot.id }, data: { deletedAt: new Date() } });
       }
 
       for (const output of batch.oilOutputs) {
@@ -879,6 +1072,40 @@ export class SoyaProcessingService {
   // the same transaction; this only keeps batch-level valuation/expiry data
   // as accurate as the lot history it has, which improves automatically as
   // older un-batched stock sells through and is replaced by batched stock.
+  // Like consumeStockBatchesFifo but returns WHICH lots (bean deliveries) were used and how many kg
+  // of each. A preferred delivery (the one picked on the form) is used first, then oldest-first.
+  // Lots on hold (moisture above the limit) are skipped; if the shortfall is only because beans
+  // are on hold, say so instead of silently under-recording.
+  private async consumeBeanLots(tx: Prisma.TransactionClient, companyId: string, warehouseId: string, productId: string, quantity: number, preferredReceipt?: string) {
+    let remaining = quantity;
+    let costTotal = 0;
+    let costedQty = 0;
+    const used: { stockBatchId: string; batchNumber?: string; kg: number; unitCost: number }[] = [];
+    const batches = await tx.stockBatch.findMany({
+      where: { companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
+      orderBy: { createdAt: "asc" }
+    });
+    if (preferredReceipt) batches.sort((a, b) => Number((b.batchNumber ?? "").toUpperCase() === preferredReceipt) - Number((a.batchNumber ?? "").toUpperCase() === preferredReceipt));
+    for (const sb of batches) {
+      if (remaining <= 0) break;
+      const consumed = Math.min(remaining, Number(sb.quantityRemaining));
+      const batchUpdate = await tx.stockBatch.updateMany({ where: { id: sb.id, quantityRemaining: { gte: consumed } }, data: { quantityRemaining: { decrement: consumed } } });
+      if (batchUpdate.count === 0) continue;
+      costTotal += consumed * Number(sb.unitCost);
+      costedQty += consumed;
+      remaining -= consumed;
+      used.push({ stockBatchId: sb.id, batchNumber: sb.batchNumber ?? undefined, kg: consumed, unitCost: Number(sb.unitCost ?? 0) });
+    }
+    if (remaining > 0.0001) {
+      const held = await tx.stockBatch.aggregate({ where: { companyId, warehouseId, productId, status: "QUARANTINED", quantityRemaining: { gt: 0 }, deletedAt: null }, _sum: { quantityRemaining: true } });
+      const heldKg = Number(held?._sum?.quantityRemaining ?? 0);
+      if (heldKg > 0 && remaining <= heldKg + 0.0001) {
+        throw new BadRequestException(`${Math.round(remaining)} kg of the beans you need are on hold (a delivery with moisture above the limit, or rejected). Accept or reject that delivery under Soya, Bean Intake, or use less beans.`);
+      }
+    }
+    return { costTotal, costedQty, lots: used };
+  }
+
   private async consumeStockBatchesFifo(tx: Prisma.TransactionClient, companyId: string, warehouseId: string, productId: string, quantity: number) {
     let remaining = quantity;
     let costTotal = 0;

@@ -1,5 +1,5 @@
 import { SoyaOutputType, SoyaProcessingBatchStatus, SoyaQualityStatus } from "@prisma/client";
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsDateString, IsEnum, IsIn, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 
 export class SoyaQueryDto {
   @IsOptional()
@@ -53,11 +53,23 @@ export class CreateSoyaBeanIntakeDto {
   @Min(0)
   unitCost!: number;
 
+  // A single moisture figure (older clients) ...
   @IsOptional()
   @IsNumber()
   @Min(0)
   moisturePercent?: number;
 
+  // ... or several readings taken on the truck (top / middle / bottom). Their average is
+  // the delivery's moisture. The delivery's accept / hold status is worked out from it.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsNumber({}, { each: true })
+  @Min(0, { each: true })
+  @Max(100, { each: true })
+  moistureReadings?: number[];
+
+  // Ignored: the status now comes from the moisture readings and the manager's decision.
   @IsOptional()
   @IsEnum(SoyaQualityStatus)
   qualityStatus?: SoyaQualityStatus;
@@ -363,4 +375,30 @@ export class UpdateSoyaQualityCheckDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+export class RecordSoyaMoistureDto {
+  @IsNumber()
+  @Min(0.1)
+  @Max(100)
+  moisturePercent!: number;
+}
+
+export class SoyaIntakeDecisionDto {
+  @IsIn(["APPROVE", "REJECT"])
+  decision!: "APPROVE" | "REJECT";
+
+  // Why: required, because accepting beans over the moisture limit or rejecting a delivery must be explained.
+  @IsString()
+  @MinLength(3)
+  @MaxLength(300)
+  note!: string;
+}
+
+export class UpdateSoyaSettingsDto {
+  // Deliveries above this average moisture are held until a manager accepts or rejects them.
+  @IsNumber()
+  @Min(1)
+  @Max(40)
+  maxMoisturePercent!: number;
 }
