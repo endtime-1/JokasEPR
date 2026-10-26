@@ -7,6 +7,7 @@ import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
   ApproveExpenseDto,
   ApprovePayrollDto,
+  CancelExpenseDto,
   ChartQueryDto,
   CreateAccountDto,
   CreateBankAccountDto,
@@ -22,6 +23,7 @@ import {
   FinanceQueryDto,
   GenerateReportDto,
   RejectExpenseDto,
+  ReverseJournalEntryDto,
   UpdateAccountDto,
   UpdateBankAccountDto,
   UpdateExpenseCategoryDto
@@ -165,6 +167,12 @@ export class FinanceController {
 
   // ─── Revenue ───────────────────────────────────────────────────────────────
 
+  @Patch("expenses/:id/cancel")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  cancelExpense(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CancelExpenseDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.cancelExpense(user, id, dto, { ipAddress, userAgent });
+  }
+
   @Get("revenue")
   @RequirePermissions(PERMISSIONS.FINANCE_READ)
   revenue(@CurrentUser() user: AuthenticatedUser, @Query() query: FinanceQueryDto) {
@@ -257,6 +265,12 @@ export class FinanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   createJournalEntry(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateJournalEntryDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.financeService.createJournalEntry(user, dto, { ipAddress, userAgent });
+  }
+
+  @Post("journal-entries/:id/reverse")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  reverseJournalEntry(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ReverseJournalEntryDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.reverseJournalEntry(user, id, dto, { ipAddress, userAgent });
   }
 
   @Patch("journal-entries/:id/post")

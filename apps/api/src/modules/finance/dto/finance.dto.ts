@@ -1,6 +1,6 @@
 import { BankAccountType, BatchType, ExpenseStatus, JournalEntryStatus, JournalEntryType, PaymentMethod, PayrollStatus, PettyCashType, RevenueSource } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
 
 export class ChartQueryDto {
   @IsOptional()
@@ -163,6 +163,7 @@ export class CreateBankAccountDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   openingBalance?: number;
 
   @IsOptional()
@@ -209,6 +210,7 @@ export class CreateExpenseDto {
 
   @IsNumber()
   @Min(0.01)
+  @Max(1_000_000_000)
   amount!: number;
 
   @IsDateString()
@@ -273,6 +275,7 @@ export class CreateRevenueDto {
 
   @IsNumber()
   @Min(0.01)
+  @Max(1_000_000_000)
   amount!: number;
 
   @IsDateString()
@@ -314,6 +317,7 @@ export class CreateSupplierPaymentDto {
 
   @IsNumber()
   @Min(0.01)
+  @Max(1_000_000_000)
   amount!: number;
 
   @IsDateString()
@@ -371,6 +375,7 @@ export class CreateCustomerPaymentDto {
 
   @IsNumber()
   @Min(0.01)
+  @Max(1_000_000_000)
   amount!: number;
 
   @IsDateString()
@@ -439,26 +444,31 @@ export class CreatePayrollRecordDto {
 
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   basicSalary!: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   allowances?: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   deductions?: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   taxDeduction?: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   ssnit?: number;
 
   @IsOptional()
@@ -493,6 +503,7 @@ export class CreatePettyCashTransactionDto {
 
   @IsNumber()
   @Min(0.01)
+  @Max(1_000_000_000)
   amount!: number;
 
   @IsString()
@@ -534,10 +545,12 @@ export class JournalEntryLineDto {
 
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   debit!: number;
 
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   credit!: number;
 
   @IsInt()
@@ -621,9 +634,26 @@ export class CreateBatchProfitabilityDto {
 
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   totalRevenue!: number;
 
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   totalCost!: number;
+}
+
+export class CancelExpenseDto {
+  // Why it is being cancelled: kept on the record and in the audit trail.
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  reason!: string;
+}
+
+export class ReverseJournalEntryDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  reason!: string;
 }

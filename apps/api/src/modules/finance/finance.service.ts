@@ -21,10 +21,12 @@ import {
   CreatePayrollRecordDto,
   CreatePettyCashTransactionDto,
   CreateRevenueDto,
+  CancelExpenseDto,
   CreateSupplierPaymentDto,
   FinanceQueryDto,
   GenerateReportDto,
   RejectExpenseDto,
+  ReverseJournalEntryDto,
   UpdateAccountDto,
   UpdateBankAccountDto,
   UpdateExpenseCategoryDto
@@ -223,6 +225,11 @@ export class FinanceService {
   }
 
   async createAccount(user: AuthenticatedUser, dto: CreateAccountDto, ctx: RequestContext) {
+    if (dto.parentId) {
+      const parent = await this.prisma.account.findFirst({ where: { id: dto.parentId, companyId: user.companyId, deletedAt: null } });
+      if (!parent) throw new BadRequestException("Parent account was not found.");
+      if (parent.type !== dto.type) throw new BadRequestException("A sub-account must be the same type as its parent.");
+    }
     const account = await this.prisma.account.create({
       data: {
         companyId: user.companyId,
@@ -241,6 +248,18 @@ export class FinanceService {
   async updateAccount(user: AuthenticatedUser, id: string, dto: UpdateAccountDto, ctx: RequestContext) {
     const account = await this.prisma.account.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!account) throw new NotFoundException("Account not found");
+    if (dto.parentId) {
+      if (dto.parentId === id) throw new BadRequestException("An account cannot be its own parent.");
+      // Walk up from the proposed parent: if we meet this account the move would create a loop.
+      let cursor: string | null = dto.parentId;
+      for (let depth = 0; cursor && depth < 20; depth++) {
+        const node: { id: string; parentId: string | null; type: string } | null = await this.prisma.account.findFirst({ where: { id: cursor, companyId: user.companyId, deletedAt: null }, select: { id: true, parentId: true, type: true } });
+        if (!node) throw new BadRequestException("Parent account was not found.");
+        if (node.id === id) throw new BadRequestException("That move would put the account inside itself.");
+        if (depth === 0 && node.type !== account.type) throw new BadRequestException("A sub-account must be the same type as its parent.");
+        cursor = node.parentId;
+      }
+    }
     const updated = await this.prisma.account.update({
       where: { id },
       data: {
@@ -289,6 +308,7 @@ export class FinanceService {
   }
 
   async createExpenseCategory(user: AuthenticatedUser, dto: CreateExpenseCategoryDto, ctx: RequestContext) {
+    await this.assertOwned(user.companyId, { accountId: dto.accountId });
     const category = await this.prisma.expenseCategory.create({
       data: {
         companyId: user.companyId,
@@ -306,6 +326,7 @@ export class FinanceService {
   async updateExpenseCategory(user: AuthenticatedUser, id: string, dto: UpdateExpenseCategoryDto, ctx: RequestContext) {
     const category = await this.prisma.expenseCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!category) throw new NotFoundException("Expense category not found");
+    await this.assertOwned(user.companyId, { accountId: dto.accountId });
     const updated = await this.prisma.expenseCategory.update({
       where: { id },
       data: {
@@ -437,6 +458,8 @@ export class FinanceService {
 
   async createExpense(user: AuthenticatedUser, dto: CreateExpenseDto, ctx: RequestContext) {
     this.assertBranchAccess(user, dto.branchId);
+    this.assertSaneDate(dto.expenseDate, "Expense date");
+    await this.assertOwned(user.companyId, { categoryId: dto.categoryId, bankAccountId: dto.bankAccountId, branchId: dto.branchId });
     // Mobile parity audit (2026-08-17): mirrors createCustomerPayment's
     // idempotencyKey handling — a mobile offline-queue resend carrying the
     // same idempotencyKey replays the original expense instead of recording
@@ -517,6 +540,23 @@ export class FinanceService {
     return { data: updated };
   }
 
+  // Cancelling keeps the record (with who and why) instead of deleting it, so the books can always be
+  // traced. An expense that another module created automatically (a procurement payment) is cancelled
+  // where it came from, otherwise the two modules would disagree.
+  async cancelExpense(user: AuthenticatedUser, id: string, dto: CancelExpenseDto, ctx: RequestContext) {
+    const expense = await this.prisma.expense.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.branchScope(user) } });
+    if (!expense) throw new NotFoundException("Expense not found");
+    if (!["PENDING", "PENDING_APPROVAL", "APPROVED"].includes(expense.status)) throw new BadRequestException(`A ${expense.status.toLowerCase()} expense cannot be cancelled.`);
+    if (/^PRC-/.test(expense.reference)) throw new BadRequestException("This expense was created automatically from a procurement payment. Cancel the payment in Procurement instead.");
+    const note = `Cancelled: ${dto.reason}`;
+    const updated = await this.prisma.expense.update({
+      where: { id },
+      data: { status: "CANCELLED", notes: [expense.notes, note].filter(Boolean).join(" | ").slice(0, 500), updatedById: user.id }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Expense", entityId: id, summary: `Cancelled expense ${expense.reference}: ${dto.reason}`, ...ctx });
+    return { data: updated };
+  }
+
   // ─── Revenue ───────────────────────────────────────────────────────────────
 
   async listRevenue(user: AuthenticatedUser, query: FinanceQueryDto) {
@@ -537,6 +577,8 @@ export class FinanceService {
 
   async createRevenue(user: AuthenticatedUser, dto: CreateRevenueDto, ctx: RequestContext) {
     this.assertBranchAccess(user, dto.branchId);
+    this.assertSaneDate(dto.revenueDate, "Revenue date");
+    await this.assertOwned(user.companyId, { bankAccountId: dto.bankAccountId, branchId: dto.branchId });
     const reference = await nextRef(this.prisma, user.companyId, "REV");
     const revenue = await this.prisma.revenue.create({
       data: {
@@ -580,6 +622,8 @@ export class FinanceService {
       const existing = await this.findSupplierPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
       if (existing) return { data: existing };
     }
+    this.assertSaneDate(dto.paymentDate, "Payment date");
+    await this.assertOwned(user.companyId, { bankAccountId: dto.bankAccountId, supplierId: dto.supplierId });
     const reference = await nextRef(this.prisma, user.companyId, "SP");
 
     // M-BUG (2026-08-13): this used to just record a free-text payment with
@@ -672,6 +716,8 @@ export class FinanceService {
       const existing = await this.findCustomerPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
       if (existing) return { data: existing };
     }
+    this.assertSaneDate(dto.paymentDate, "Payment date");
+    await this.assertOwned(user.companyId, { bankAccountId: dto.bankAccountId });
     const reference = await nextRef(this.prisma, user.companyId, "CP");
 
     // Medium (DB stability audit, 2026-08-16): this used to just record a
@@ -761,6 +807,7 @@ export class FinanceService {
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
     this.assertBranchAccess(user, dto.branchId);
+    await this.assertOwned(user.companyId, { bankAccountId: dto.bankAccountId, branchId: dto.branchId });
     const employeeName = dto.employeeName.trim();
 
     // H-BACK-1: this endpoint and HR's own POST /hr/payroll both create
@@ -860,6 +907,8 @@ export class FinanceService {
 
   async createPettyCashTransaction(user: AuthenticatedUser, dto: CreatePettyCashTransactionDto, ctx: RequestContext) {
     this.assertBranchAccess(user, dto.branchId);
+    this.assertSaneDate(dto.transactionDate, "Transaction date");
+    await this.assertOwned(user.companyId, { categoryId: dto.categoryId, branchId: dto.branchId });
     const reference = await nextRef(this.prisma, user.companyId, "PCT");
 
     // The running balance is derived from the *previous* transaction's
@@ -924,9 +973,23 @@ export class FinanceService {
   }
 
   async createJournalEntry(user: AuthenticatedUser, dto: CreateJournalEntryDto, ctx: RequestContext) {
-    const totalDebit = dto.lines.reduce((s, l) => s + (l.debit ?? 0), 0);
-    const totalCredit = dto.lines.reduce((s, l) => s + (l.credit ?? 0), 0);
-    if (Math.abs(totalDebit - totalCredit) > 0.01) throw new BadRequestException("Debits must equal credits");
+    this.assertSaneDate(dto.entryDate, "Entry date");
+    if (!dto.lines || dto.lines.length < 2) throw new BadRequestException("A journal entry needs at least two lines.");
+    for (const [i, l] of dto.lines.entries()) {
+      const debit = roundMoney(l.debit ?? 0);
+      const credit = roundMoney(l.credit ?? 0);
+      if (debit > 0 && credit > 0) throw new BadRequestException(`Line ${i + 1} has both a debit and a credit. Use one side per line.`);
+      if (debit <= 0 && credit <= 0) throw new BadRequestException(`Line ${i + 1} has no amount.`);
+    }
+    const totalDebit = roundMoney(dto.lines.reduce((sum, l) => sum + (l.debit ?? 0), 0));
+    const totalCredit = roundMoney(dto.lines.reduce((sum, l) => sum + (l.credit ?? 0), 0));
+    if (totalDebit !== totalCredit) throw new BadRequestException(`Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)}).`);
+    if (totalDebit <= 0) throw new BadRequestException("A journal entry must have a total above zero.");
+
+    // Every line's account must be one of OUR active accounts.
+    const accountIds = [...new Set(dto.lines.map((l) => l.accountId))];
+    const accounts = await this.prisma.account.findMany({ where: { id: { in: accountIds }, companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true } });
+    if (accounts.length !== accountIds.length) throw new BadRequestException("One or more accounts were not found or are inactive.");
 
     const reference = await nextRef(this.prisma, user.companyId, "JE");
 
@@ -944,12 +1007,12 @@ export class FinanceService {
         notes: dto.notes,
         createdById: user.id,
         lines: {
-          create: dto.lines.map((l) => ({
+          create: dto.lines.map((l, i) => ({
             accountId: l.accountId,
             description: l.description,
-            debit: l.debit,
-            credit: l.credit,
-            sequence: l.sequence
+            debit: roundMoney(l.debit ?? 0),
+            credit: roundMoney(l.credit ?? 0),
+            sequence: l.sequence ?? i + 1
           }))
         }
       },
@@ -963,10 +1026,50 @@ export class FinanceService {
     const entry = await this.prisma.journalEntry.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!entry) throw new NotFoundException("Journal entry not found");
     if (entry.status !== "DRAFT") throw new BadRequestException("Only DRAFT entries can be posted");
+    // Whoever wrote the entry may not also post it: a second person must review it first.
+    if (entry.createdById === user.id) throw new ForbiddenException("You cannot post a journal entry you created yourself. Ask a colleague to review and post it.");
 
-    const updated = await this.prisma.journalEntry.update({ where: { id }, data: { status: "POSTED", postedById: user.id, updatedById: user.id } });
+    // Posting uses a guarded update so two people clicking Post cannot both succeed.
+    const done = await this.prisma.journalEntry.updateMany({ where: { id, companyId: user.companyId, status: "DRAFT" }, data: { status: "POSTED", postedById: user.id, updatedById: user.id } });
+    if (done.count === 0) throw new BadRequestException("This entry was already posted.");
+    const updated = await this.prisma.journalEntry.findFirst({ where: { id, companyId: user.companyId } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "APPROVE", entityType: "JournalEntry", entityId: id, ...ctx });
     return { data: updated };
+  }
+
+  // A posted entry is never edited or deleted. It is reversed: a mirror entry (debits and credits swapped)
+  // is posted, and the original is marked REVERSED, so history stays complete.
+  async reverseJournalEntry(user: AuthenticatedUser, id: string, dto: ReverseJournalEntryDto, ctx: RequestContext) {
+    const entry = await this.prisma.journalEntry.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { lines: true } });
+    if (!entry) throw new NotFoundException("Journal entry not found");
+    if (entry.status !== "POSTED") throw new BadRequestException("Only POSTED entries can be reversed.");
+    if (entry.type === "REVERSAL") throw new BadRequestException("A reversal entry cannot itself be reversed. Post a new entry instead.");
+    const reference = await nextRef(this.prisma, user.companyId, "JE");
+
+    const reversal = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.journalEntry.updateMany({ where: { id, companyId: user.companyId, status: "POSTED" }, data: { status: "REVERSED", updatedById: user.id } });
+      if (claimed.count === 0) throw new BadRequestException("This entry was already reversed.");
+      return tx.journalEntry.create({
+        data: {
+          companyId: user.companyId,
+          reference,
+          entryDate: new Date(),
+          description: `Reversal of ${entry.reference}: ${dto.reason}`.slice(0, 240),
+          type: "REVERSAL",
+          status: "POSTED",
+          totalDebit: entry.totalCredit,
+          totalCredit: entry.totalDebit,
+          reversalOf: entry.id,
+          notes: dto.reason,
+          postedById: user.id,
+          createdById: user.id,
+          lines: { create: entry.lines.map((l) => ({ accountId: l.accountId, description: l.description, debit: l.credit, credit: l.debit, sequence: l.sequence })) }
+        },
+        include: { lines: true }
+      });
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "JournalEntry", entityId: id, summary: `Reversed ${entry.reference} with ${reversal.reference}: ${dto.reason}`, ...ctx });
+    return { data: reversal };
   }
 
   // ─── Reports ───────────────────────────────────────────────────────────────
@@ -1196,6 +1299,32 @@ export class FinanceService {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
+  // Every id a request points at (category, bank account, branch, account, supplier) must belong to
+  // THIS company. Before, a record could be attached to another company's bank account or category by id,
+  // and the joined name would then be shown back.
+  private async assertOwned(
+    companyId: string,
+    refs: { categoryId?: string | null; bankAccountId?: string | null; branchId?: string | null; accountId?: string | null; supplierId?: string | null }
+  ) {
+    const checks: Promise<unknown>[] = [];
+    const must = (label: string, p: Promise<unknown>) => checks.push(p.then((row) => { if (!row) throw new BadRequestException(`${label} was not found.`); }));
+    if (refs.categoryId) must("Expense category", this.prisma.expenseCategory.findFirst({ where: { id: refs.categoryId, companyId, deletedAt: null }, select: { id: true } }) as Promise<unknown>);
+    if (refs.bankAccountId) must("Bank account", this.prisma.bankAccount.findFirst({ where: { id: refs.bankAccountId, companyId, deletedAt: null }, select: { id: true } }) as Promise<unknown>);
+    if (refs.branchId) must("Branch", this.prisma.branch.findFirst({ where: { id: refs.branchId, companyId, deletedAt: null }, select: { id: true } }) as Promise<unknown>);
+    if (refs.accountId) must("Account", this.prisma.account.findFirst({ where: { id: refs.accountId, companyId, deletedAt: null }, select: { id: true } }) as Promise<unknown>);
+    if (refs.supplierId) must("Supplier", this.prisma.supplier.findFirst({ where: { id: refs.supplierId, companyId, deletedAt: null }, select: { id: true } }) as Promise<unknown>);
+    await Promise.all(checks);
+  }
+
+  // A mistyped year or a pasted wrong date would otherwise land a transaction in the wrong period.
+  private assertSaneDate(value: string | undefined, label: string) {
+    if (!value) return;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) throw new BadRequestException(`${label} is not a valid date.`);
+    if (d.getTime() > Date.now() + 7 * 86400000) throw new BadRequestException(`${label} cannot be more than 7 days in the future.`);
+    if (d.getFullYear() < 2000) throw new BadRequestException(`${label} is too far in the past.`);
+  }
+
   // This module had NO branch scoping at all — every method filtered only by
   // companyId, so a branch-restricted finance user could read/approve/reject
   // any other branch's expenses, payroll, or revenue by ID. Only
@@ -1227,9 +1356,12 @@ export class FinanceService {
   private dateBetween(query: FinanceQueryDto, field: string) {
     if (!query.startDate && !query.endDate) return {};
     const result: Record<string, unknown> = {};
+    // A date-only end date means "through the end of that day", not "up to midnight at its start".
+    const end = query.endDate ? new Date(query.endDate) : null;
+    if (end && /^\d{4}-\d{2}-\d{2}$/.test(query.endDate!)) end.setUTCHours(23, 59, 59, 999);
     result[field] = {
       ...(query.startDate ? { gte: new Date(query.startDate) } : {}),
-      ...(query.endDate ? { lte: new Date(query.endDate) } : {})
+      ...(end ? { lte: end } : {})
     };
     return result;
   }

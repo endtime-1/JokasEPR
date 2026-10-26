@@ -713,6 +713,22 @@ export function ExpenseListPage() {
     }
   }
 
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
+  async function submitCancel(e: FormEvent) {
+    e.preventDefault();
+    if (!cancelId || cancelReason.trim().length < 3) return;
+    setCancelling(true); setActionErr("");
+    try {
+      await apiFetch(`/finance/expenses/${cancelId}/cancel`, { method: "PATCH", body: JSON.stringify({ reason: cancelReason.trim() }) });
+      setCancelId(null); setCancelReason(""); load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to cancel expense");
+    } finally { setCancelling(false); }
+  }
+
   async function submitReject(e: FormEvent) {
     e.preventDefault();
     if (!rejectingId || !rejectReason) return;
@@ -742,6 +758,16 @@ export function ExpenseListPage() {
           </form>
         </div>
       )}
+      {cancelId && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="mb-2 text-sm font-semibold text-amber-800">Why is this expense being cancelled? The reason is kept on the record.</p>
+          <form onSubmit={submitCancel} className="flex flex-wrap gap-2">
+            <input className="app-control min-w-48 flex-1" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="e.g. Entered twice" minLength={3} maxLength={200} required autoFocus />
+            <button type="submit" disabled={cancelling} className={btnPrimary}>{cancelling ? "Cancelling…" : "Cancel expense"}</button>
+            <button type="button" onClick={() => { setCancelId(null); setCancelReason(""); }} className={btnSecondary}>Keep it</button>
+          </form>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap gap-3">
         <select className={selectClass} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All Statuses</option>
@@ -766,7 +792,10 @@ export function ExpenseListPage() {
                 <div className="flex gap-2">
                   <button onClick={() => handleApprove(r.id as string)} className="text-xs text-green-700 hover:underline">Approve</button>
                   <button onClick={() => setRejectingId(r.id as string)} className="text-xs text-red-600 hover:underline">Reject</button>
+                  {!String(r.reference).startsWith("PRC-") && <button onClick={() => { setCancelId(r.id as string); setCancelReason(""); }} className="text-xs text-ink/50 hover:underline">Cancel</button>}
                 </div>
+              ) : (["PENDING", "APPROVED"].includes(r.status as string) && !String(r.reference).startsWith("PRC-")) ? (
+                <button onClick={() => { setCancelId(r.id as string); setCancelReason(""); }} className="text-xs text-ink/50 hover:underline">Cancel</button>
               ) : null
           }
         ]}
@@ -1654,6 +1683,22 @@ export function JournalEntriesPage() {
     }
   }
 
+  const [reverseId, setReverseId] = useState<string | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const [reversing, setReversing] = useState(false);
+
+  async function submitReverse(e: FormEvent) {
+    e.preventDefault();
+    if (!reverseId || reverseReason.trim().length < 3) return;
+    setReversing(true); setActionErr("");
+    try {
+      await apiFetch(`/finance/journal-entries/${reverseId}/reverse`, { method: "POST", body: JSON.stringify({ reason: reverseReason.trim() }) });
+      setReverseId(null); setReverseReason(""); load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to reverse journal entry");
+    } finally { setReversing(false); }
+  }
+
   async function handlePost(id: string) {
     setActionErr("");
     try {
@@ -1671,6 +1716,16 @@ export function JournalEntriesPage() {
       </div>
       {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
       {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError || optionsError}</p>}
+      {reverseId && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="mb-2 text-sm font-semibold text-amber-800">A posted entry is never deleted. A mirror entry is posted to cancel it out, and both stay on record. Why is it being reversed?</p>
+          <form onSubmit={submitReverse} className="flex flex-wrap gap-2">
+            <input className="app-control min-w-48 flex-1" value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} placeholder="e.g. Posted to the wrong account" minLength={3} maxLength={200} required autoFocus />
+            <button type="submit" disabled={reversing} className={btnPrimary}>{reversing ? "Reversing…" : "Reverse entry"}</button>
+            <button type="button" onClick={() => { setReverseId(null); setReverseReason(""); }} className={btnSecondary}>Keep it</button>
+          </form>
+        </div>
+      )}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Journal Entry</h3>
@@ -1726,7 +1781,8 @@ export function JournalEntriesPage() {
           { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
           {
             key: "actions", label: "", render: (r) =>
-              r.status === "DRAFT" ? <button onClick={() => handlePost(r.id as string)} className="text-xs text-brand hover:underline">Post</button> : null
+              r.status === "DRAFT" ? <button onClick={() => handlePost(r.id as string)} className="text-xs text-brand hover:underline">Post</button>
+              : r.status === "POSTED" && r.type !== "REVERSAL" ? <button onClick={() => { setReverseId(r.id as string); setReverseReason(""); }} className="text-xs text-ink/50 hover:underline">Reverse</button> : null
           }
         ]}
         rows={entries}

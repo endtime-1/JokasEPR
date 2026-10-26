@@ -29,7 +29,10 @@ const mockPrisma = {
   salesOrder: { update: jest.fn() },
   poultryCostRecord: { groupBy: jest.fn() },
   productProfitability: { create: jest.fn() },
-  account: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  account: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  branch: { findFirst: jest.fn() },
+  supplier: { findFirst: jest.fn().mockResolvedValue({ id: "sup-1" }) },
+  journalEntry: { findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
   expenseCategory: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   journalEntryLine: { count: jest.fn().mockResolvedValue(0) },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma))
@@ -660,5 +663,147 @@ describe("FinanceService.createExpense — idempotencyKey dedup (mobile parity a
     );
 
     expect(result.data).toEqual({ id: "exp-existing" });
+  });
+});
+
+describe("FinanceService — references must belong to this company", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("createExpense refuses a category that is not ours", async () => {
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue(null);
+    await expect(makeService().createExpense(makeUser({ branchIds: [] }), { categoryId: "cat-other", amount: 100, expenseDate: "2026-10-01" } as never, {})).rejects.toThrow(/Expense category was not found/);
+    expect(mockPrisma.expense.create).not.toHaveBeenCalled();
+  });
+
+  it("createExpense refuses a bank account that is not ours", async () => {
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue({ id: "cat-1" });
+    mockPrisma.bankAccount.findFirst.mockResolvedValue(null);
+    await expect(makeService().createExpense(makeUser({ branchIds: [] }), { categoryId: "cat-1", bankAccountId: "bank-other", amount: 100, expenseDate: "2026-10-01" } as never, {})).rejects.toThrow(/Bank account was not found/);
+  });
+
+  it("createRevenue refuses a branch from another company, even for a global user", async () => {
+    mockPrisma.branch.findFirst.mockResolvedValue(null);
+    await expect(makeService().createRevenue(makeUser({ hasGlobalAccess: true }), { branchId: "branch-x", amount: 10, revenueDate: "2026-10-01" } as never, {})).rejects.toThrow(/Branch was not found/);
+  });
+
+  it("createSupplierPayment refuses a supplier that is not ours", async () => {
+    mockPrisma.supplier.findFirst.mockResolvedValue(null);
+    await expect(makeService().createSupplierPayment(makeUser(), { supplierId: "sup-x", supplierName: "X", amount: 10, paymentDate: "2026-10-01" } as never, {})).rejects.toThrow(/Supplier was not found/);
+  });
+
+  it("rejects a date far in the future or a year in the distant past", async () => {
+    await expect(makeService().createExpense(makeUser({ branchIds: [] }), { amount: 10, expenseDate: "2031-01-01" } as never, {})).rejects.toThrow(/future/);
+    await expect(makeService().createRevenue(makeUser({ branchIds: [] }), { amount: 10, revenueDate: "1970-01-01" } as never, {})).rejects.toThrow(/too far in the past/);
+  });
+
+  it("a date-only end date includes the whole day", async () => {
+    mockPrisma.expense.findMany.mockResolvedValue([]);
+    mockPrisma.expense.count.mockResolvedValue(0);
+    await makeService().listExpenses(makeUser({ branchIds: [] }), { startDate: "2026-10-01", endDate: "2026-10-26" } as never);
+    const lte = mockPrisma.expense.findMany.mock.calls[0][0].where.expenseDate.lte as Date;
+    expect(lte.toISOString()).toBe("2026-10-26T23:59:59.999Z");
+  });
+});
+
+describe("FinanceService — chart of accounts structure", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("a sub-account must be the same type as its parent", async () => {
+    mockPrisma.account.findFirst.mockResolvedValue({ id: "p", type: "ASSET" });
+    await expect(makeService().createAccount(makeUser(), { code: "1010", name: "Cash", type: "EXPENSE", parentId: "p" } as never, {})).rejects.toThrow(/same type/);
+  });
+
+  it("an account cannot be moved inside itself", async () => {
+    mockPrisma.account.findFirst.mockImplementation(({ where }: { where: { id: string } }) => {
+      const nodes: Record<string, object> = { a: { id: "a", parentId: null, type: "ASSET" }, b: { id: "b", parentId: "a", type: "ASSET" } };
+      return Promise.resolve(nodes[where.id] ?? null);
+    });
+    await expect(makeService().updateAccount(makeUser(), "a", { parentId: "b" } as never, {})).rejects.toThrow(/inside itself/);
+    await expect(makeService().updateAccount(makeUser(), "a", { parentId: "a" } as never, {})).rejects.toThrow(/own parent/);
+  });
+});
+
+describe("FinanceService — journal entries", () => {
+  const line = (accountId: string, debit: number, credit: number, sequence = 1) => ({ accountId, debit, credit, sequence });
+  const dto = (lines: unknown[]) => ({ entryDate: "2026-10-01", description: "Test", type: "STANDARD", lines }) as never;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.account.findMany.mockResolvedValue([{ id: "a1" }, { id: "a2" }]);
+    mockPrisma.journalEntry.create.mockImplementation(({ data }: { data: object }) => Promise.resolve({ id: "je-1", ...data }));
+  });
+
+  it("refuses an entry that does not balance", async () => {
+    await expect(makeService().createJournalEntry(makeUser(), dto([line("a1", 100, 0), line("a2", 0, 90)]), {})).rejects.toThrow(/must equal/);
+  });
+
+  it("refuses a line with both sides, no amount, or fewer than two lines", async () => {
+    await expect(makeService().createJournalEntry(makeUser(), dto([line("a1", 50, 50), line("a2", 0, 0)]), {})).rejects.toThrow(/both a debit and a credit/);
+    await expect(makeService().createJournalEntry(makeUser(), dto([line("a1", 100, 0), line("a2", 0, 0)]), {})).rejects.toThrow(/no amount/);
+    await expect(makeService().createJournalEntry(makeUser(), dto([line("a1", 100, 0)]), {})).rejects.toThrow(/at least two lines/);
+  });
+
+  it("refuses an account that is not ours or is inactive", async () => {
+    mockPrisma.account.findMany.mockResolvedValue([{ id: "a1" }]);
+    await expect(makeService().createJournalEntry(makeUser(), dto([line("a1", 100, 0), line("a2", 0, 100)]), {})).rejects.toThrow(/not found or are inactive/);
+  });
+
+  it("saves a balanced entry with rounded amounts", async () => {
+    const out = await makeService().createJournalEntry(makeUser(), dto([line("a1", 100.005, 0), line("a2", 0, 100.005)]), {});
+    expect(mockPrisma.journalEntry.create).toHaveBeenCalled();
+    expect(Number((out.data as unknown as { totalDebit: unknown }).totalDebit)).toBeCloseTo(100.01, 2);
+  });
+
+  it("the person who wrote an entry cannot post it", async () => {
+    mockPrisma.journalEntry.findFirst.mockResolvedValue({ id: "je-1", status: "DRAFT", createdById: "user-1" });
+    await expect(makeService().postJournalEntry(makeUser({ id: "user-1" }), "je-1", {})).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.journalEntry.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("a second person can post it, and only once", async () => {
+    mockPrisma.journalEntry.findFirst.mockResolvedValue({ id: "je-1", status: "DRAFT", createdById: "user-9" });
+    mockPrisma.journalEntry.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    await makeService().postJournalEntry(makeUser({ id: "user-1" }), "je-1", {});
+    await expect(makeService().postJournalEntry(makeUser({ id: "user-1" }), "je-1", {})).rejects.toThrow(/already posted/);
+  });
+
+  it("reversing swaps debits and credits, marks the original REVERSED, and keeps both", async () => {
+    mockPrisma.journalEntry.findFirst.mockResolvedValue({ id: "je-1", reference: "JE-1", status: "POSTED", type: "STANDARD", totalDebit: 100, totalCredit: 100, lines: [
+      { accountId: "a1", debit: 100, credit: 0, sequence: 1, description: null }, { accountId: "a2", debit: 0, credit: 100, sequence: 2, description: null }] });
+    mockPrisma.journalEntry.updateMany.mockResolvedValue({ count: 1 });
+    await makeService().reverseJournalEntry(makeUser(), "je-1", { reason: "Posted to wrong account" }, {});
+    expect(mockPrisma.journalEntry.updateMany.mock.calls[0][0].data.status).toBe("REVERSED");
+    const created = mockPrisma.journalEntry.create.mock.calls[0][0].data;
+    expect(created.type).toBe("REVERSAL");
+    expect(created.reversalOf).toBe("je-1");
+    expect(created.lines.create[0]).toEqual(expect.objectContaining({ accountId: "a1", debit: 0, credit: 100 }));
+    expect(created.lines.create[1]).toEqual(expect.objectContaining({ accountId: "a2", debit: 100, credit: 0 }));
+  });
+
+  it("only a posted entry can be reversed, and a reversal cannot be reversed", async () => {
+    mockPrisma.journalEntry.findFirst.mockResolvedValue({ id: "je-1", status: "DRAFT", type: "STANDARD", lines: [] });
+    await expect(makeService().reverseJournalEntry(makeUser(), "je-1", { reason: "x y z" }, {})).rejects.toThrow(/Only POSTED/);
+    mockPrisma.journalEntry.findFirst.mockResolvedValue({ id: "je-2", status: "POSTED", type: "REVERSAL", lines: [] });
+    await expect(makeService().reverseJournalEntry(makeUser(), "je-2", { reason: "x y z" }, {})).rejects.toThrow(/cannot itself be reversed/);
+  });
+});
+
+describe("FinanceService.cancelExpense", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("cancels a pending expense and keeps the reason", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValue({ id: "e1", reference: "EXP-1", status: "PENDING", notes: "n" });
+    mockPrisma.expense.update.mockResolvedValue({ id: "e1", status: "CANCELLED" });
+    await makeService().cancelExpense(makeUser({ branchIds: [] }), "e1", { reason: "Entered twice" }, {});
+    const data = mockPrisma.expense.update.mock.calls[0][0].data;
+    expect(data.status).toBe("CANCELLED");
+    expect(data.notes).toContain("Cancelled: Entered twice");
+  });
+
+  it("refuses to cancel one that was rejected, or one that came from a procurement payment", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValue({ id: "e1", reference: "EXP-1", status: "REJECTED" });
+    await expect(makeService().cancelExpense(makeUser({ branchIds: [] }), "e1", { reason: "abc" }, {})).rejects.toThrow(/cannot be cancelled/);
+    mockPrisma.expense.findFirst.mockResolvedValue({ id: "e2", reference: "PRC-PAY-0001", status: "APPROVED" });
+    await expect(makeService().cancelExpense(makeUser({ branchIds: [] }), "e2", { reason: "abc" }, {})).rejects.toThrow(/Procurement/);
   });
 });
