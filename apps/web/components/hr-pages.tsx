@@ -1388,7 +1388,10 @@ export function AttendancePage() {
   const { opts, optionsError } = useHROptions();
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
   const [branchFilter, setBranchFilter] = useState("");
-  const [form, setForm] = useState({ employeeId: "", date: new Date().toISOString().slice(0, 10), checkInTime: "", checkOutTime: "", status: "PRESENT", shiftId: "", notes: "" });
+  type RosterEntry = { status: string; checkIn: string; checkOut: string };
+  const [edits, setEdits] = useState<Record<string, Partial<RosterEntry>>>({});
+  const [bulkShiftId, setBulkShiftId] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(!hasCached("/hr/attendance"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1404,21 +1407,42 @@ export function AttendancePage() {
     apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}${branchFilter ? `&branchId=${branchFilter}` : ""}`).then((r) => { if (!latestRequest.isCurrent(attKey)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(attKey)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(attKey)) setLoading(false); });
   }
 
-  useEffect(() => { load(); }, [dateFilter, branchFilter]);
+  useEffect(() => { setEdits({}); load(); }, [dateFilter, branchFilter]);
   useApiRecovery(rows.length === 0, load);
 
-  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const hhmm = (v?: string) => v ? new Date(v).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+  const existingByEmployee = new Map(rows.map((r: any) => [r.employeeId ?? r.employee?.id, r]));
+  // Effective roster row: user edit > already-recorded value for this date > default (PRESENT)
+  function entryFor(empId: string): RosterEntry {
+    const ex: any = existingByEmployee.get(empId);
+    const base: RosterEntry = ex ? { status: ex.status, checkIn: hhmm(ex.checkInTime), checkOut: hhmm(ex.checkOutTime) } : { status: "PRESENT", checkIn: "", checkOut: "" };
+    return { ...base, ...edits[empId] };
+  }
+  const setEntry = (empId: string, patch: Partial<RosterEntry>) => setEdits((p) => ({ ...p, [empId]: { ...p[empId], ...patch } }));
+  const rosterEmployees = opts.employees.filter((e) => !search.trim() || `${e.fullName} ${e.code}`.toLowerCase().includes(search.trim().toLowerCase()));
+  function markAll(status: string) {
+    setEdits((p) => { const next = { ...p }; for (const e of rosterEmployees) next[e.id] = { ...next[e.id], status }; return next; });
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError("");
     try {
-      await apiFetch("/hr/attendance", {
-        method: "POST",
-        body: JSON.stringify({ ...form, shiftId: form.shiftId || undefined, checkInTime: form.checkInTime ? `${form.date}T${form.checkInTime}:00` : undefined, checkOutTime: form.checkOutTime ? `${form.date}T${form.checkOutTime}:00` : undefined }),
-      });
+      const records = opts.employees.map((emp) => {
+        const en = entryFor(emp.id);
+        return {
+          employeeId: emp.id,
+          status: en.status,
+          shiftId: bulkShiftId || undefined,
+          checkInTime: en.checkIn ? `${dateFilter}T${en.checkIn}:00` : undefined,
+          checkOutTime: en.checkOut ? `${dateFilter}T${en.checkOut}:00` : undefined,
+        };
+      }).filter((r) => r.status);
+      if (records.length === 0) throw new Error("No employees to record.");
+      await apiFetch("/hr/attendance/bulk", { method: "POST", body: JSON.stringify({ date: dateFilter, records }) });
       setShowForm(false);
+      setEdits({});
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to record");
@@ -1443,45 +1467,56 @@ export function AttendancePage() {
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
 
         {showForm && (
-          <div className="app-card p-5">
-            <h2 className="mb-4 font-semibold">Record Attendance</h2>
+          <div className="rounded-lg border border-line bg-white p-5">
+            <h2 className="mb-1 font-semibold">Record Attendance — {fmt(dateFilter)}</h2>
+            <p className="mb-4 text-xs text-ink/60">Everyone is listed below, defaulting to Present. Adjust the exceptions, then save once. Change the date using the Date filter.</p>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium">Employee *</label>
-                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full app-control py-2">
-                  <option value="">— Select —</option>
-                  {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
-                </select>
+            <form onSubmit={submit} className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Search</label>
+                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or code" className="rounded-md border border-line px-3 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Shift (all)</label>
+                  <select value={bulkShiftId} onChange={(e) => setBulkShiftId(e.target.value)} className="rounded-md border border-line px-3 py-1.5 text-sm">
+                    <option value="">— None —</option>
+                    {opts.shifts.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.startTime}—{s.endTime})</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  {["PRESENT", "ABSENT", "ON_LEAVE"].map((s) => (
+                    <button key={s} type="button" onClick={() => markAll(s)} className="rounded-md border border-line px-3 py-1.5 text-xs font-semibold hover:bg-gray-50">All {s.replace(/_/g, " ").toLowerCase()}</button>
+                  ))}
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium">Date *</label>
-                <input required type="date" value={form.date} onChange={f("date")} className="w-full app-control py-2" />
+              <div className="max-h-[28rem] overflow-auto rounded-md border border-line">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 text-left text-xs">
+                    <tr><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Check in</th><th className="px-3 py-2">Check out</th></tr>
+                  </thead>
+                  <tbody>
+                    {rosterEmployees.map((emp) => {
+                      const en = entryFor(emp.id);
+                      return (
+                        <tr key={emp.id} className="border-t border-line">
+                          <td className="px-3 py-1.5">{emp.fullName} <span className="text-xs text-ink/50">({emp.code})</span></td>
+                          <td className="px-3 py-1.5">
+                            <select value={en.status} onChange={(e) => setEntry(emp.id, { status: e.target.value })} className="rounded-md border border-line px-2 py-1 text-sm">
+                              <option value="">— Skip —</option>
+                              {["PRESENT", "ABSENT", "LATE", "HALF_DAY", "ON_LEAVE", "PUBLIC_HOLIDAY"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-3 py-1.5"><input type="time" value={en.checkIn} onChange={(e) => setEntry(emp.id, { checkIn: e.target.value })} className="rounded-md border border-line px-2 py-1 text-sm" /></td>
+                          <td className="px-3 py-1.5"><input type="time" value={en.checkOut} onChange={(e) => setEntry(emp.id, { checkOut: e.target.value })} className="rounded-md border border-line px-2 py-1 text-sm" /></td>
+                        </tr>
+                      );
+                    })}
+                    {rosterEmployees.length === 0 && <tr><td colSpan={4} className="px-3 py-4 text-center text-ink/50">No employees found</td></tr>}
+                  </tbody>
+                </table>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium">Status *</label>
-                <select required value={form.status} onChange={f("status")} className="w-full app-control py-2">
-                  {["PRESENT", "ABSENT", "LATE", "HALF_DAY", "ON_LEAVE", "PUBLIC_HOLIDAY"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium">Shift</label>
-                <select value={form.shiftId} onChange={f("shiftId")} className="w-full app-control py-2">
-                  <option value="">— None —</option>
-                  {opts.shifts.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.startTime}—{s.endTime})</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium">Check In Time</label>
-                <input type="time" value={form.checkInTime} onChange={f("checkInTime")} className="w-full app-control py-2" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium">Check Out Time</label>
-                <input type="time" value={form.checkOutTime} onChange={f("checkOutTime")} className="w-full app-control py-2" />
-              </div>
-              <div className="col-span-2">
-                <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Record"}</button>
-              </div>
+              <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : `Save attendance (${opts.employees.filter((e) => entryFor(e.id).status).length})`}</button>
             </form>
           </div>
         )}
