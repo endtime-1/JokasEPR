@@ -2201,6 +2201,9 @@ model Customer {
   companyId       String
   branchId        String
   customerGroupId String?
+  // The market/destination this customer belongs to (Market is a plain-FK
+  // model with no Prisma relation — see its own comment).
+  marketId        String?        @db.VarChar(191)
   code            String
   name            String
   phone           String?
@@ -2234,6 +2237,7 @@ model Customer {
   @@index([companyId])
   @@index([branchId])
   @@index([customerGroupId])
+  @@index([marketId])
   @@index([companyId, status])
   @@index([companyId, createdAt])
   @@index([deletedAt])

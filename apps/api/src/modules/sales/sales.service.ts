@@ -177,17 +177,25 @@ export class SalesService {
       orderBy: { createdAt: "desc" },
       take: 200
     });
-    return { data };
+    // Market has no Prisma relation, so attach the destination name by hand.
+    const marketIds = [...new Set(data.map((c) => c.marketId).filter((id): id is string => !!id))];
+    const markets = marketIds.length
+      ? await this.prisma.market.findMany({ where: { companyId: user.companyId, id: { in: marketIds } }, select: { id: true, name: true } })
+      : [];
+    const marketName = new Map(markets.map((m) => [m.id, m.name]));
+    return { data: data.map((c) => ({ ...c, market: c.marketId ? { id: c.marketId, name: marketName.get(c.marketId) ?? "-" } : null })) };
   }
 
   async createCustomer(user: AuthenticatedUser, dto: CreateCustomerDto, context: RequestContext) {
     this.assertBranchAccess(user, dto.branchId);
+    if (dto.marketId) await this.assertMarketExists(user.companyId, dto.marketId);
     const data = await this.prisma.$transaction(async (tx) => {
       const customer = await tx.customer.create({
         data: {
           companyId: user.companyId,
           branchId: dto.branchId,
           customerGroupId: dto.customerGroupId,
+          marketId: dto.marketId,
           code: dto.code.toUpperCase(),
           name: dto.name,
           phone: dto.phone,
@@ -229,11 +237,13 @@ export class SalesService {
     const customer = await this.prisma.customer.findFirst({ where: { ...this.customerWhere(user, {}), id } });
     if (!customer) throw new NotFoundException("Customer was not found.");
     if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
+    if (dto.marketId) await this.assertMarketExists(user.companyId, dto.marketId);
     const data = await this.prisma.customer.update({
       where: { id },
       data: {
         branchId: dto.branchId,
         customerGroupId: dto.customerGroupId,
+        marketId: dto.marketId === null ? null : dto.marketId,
         name: dto.name,
         phone: dto.phone,
         email: dto.email,
@@ -2216,7 +2226,12 @@ export class SalesService {
   }
 
   private customerWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, id: query.customerId, ...this.branchScope(user, query) };
+    return { companyId: user.companyId, deletedAt: null, id: query.customerId, marketId: query.marketId, ...this.branchScope(user, query) };
+  }
+
+  private async assertMarketExists(companyId: string, marketId: string) {
+    const market = await this.prisma.market.findFirst({ where: { id: marketId, companyId, deletedAt: null }, select: { id: true } });
+    if (!market) throw new NotFoundException("Market was not found.");
   }
 
   private priceListWhere(user: AuthenticatedUser, query: SalesQueryDto) {

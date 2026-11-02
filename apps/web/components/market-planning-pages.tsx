@@ -252,8 +252,95 @@ function RecommendationTable({ rows, loading, onCancel }: { rows: Recommendation
 // marketer to it here; that marketer then only ever sees/creates plans for
 // that market (enforced server-side — this page is just how a manager sets
 // the assignment up).
-type MarketRow = { id: string; name: string; code?: string; branchId?: string; assignedUserId?: string; isActive: boolean; assignedUser?: { id: string; fullName: string; email: string } };
-type CompanyUserOption = { id: string; fullName: string; email: string };
+type MarketRow = { id: string; name: string; code?: string; branchId?: string; assignedUserId?: string; isActive: boolean; customerCount?: number; assignedUser?: { id: string; fullName: string; email: string } };
+type CompanyUserOption = { id: string; fullName: string; email: string; roles?: string[] };
+type CustomerLite = { id: string; code: string; name: string; phone?: string | null; address?: string | null; marketId?: string | null; market?: { id: string; name: string } | null };
+
+// Group customers under a market (its destination): see who's in it, remove
+// them, or tick unassigned/other-market customers to move them in.
+function MarketCustomersPanel({ market, onClose, onChanged }: { market: MarketRow; onClose: () => void; onChanged: () => void }) {
+  const [members, setMembers] = useState<CustomerLite[]>([]);
+  const [all, setAll] = useState<CustomerLite[]>([]);
+  const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  function load() {
+    Promise.all([
+      apiFetch<ApiEnvelope<CustomerLite[]>>(`/market-planning/markets/${market.id}/customers`),
+      apiFetch<ApiEnvelope<CustomerLite[]>>("/sales/customers")
+    ])
+      .then(([m, c]) => { setMembers(m.data ?? []); setAll(c.data ?? []); })
+      .catch((e: any) => setError(e?.message ?? "Failed to load customers."));
+  }
+  useEffect(load, [market.id]);
+
+  async function apply(body: { add?: string[]; remove?: string[] }) {
+    setBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/market-planning/markets/${market.id}/customers`, { method: "POST", body: JSON.stringify(body) });
+      setPicked(new Set());
+      load();
+      onChanged();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to update customers.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const candidates = all
+    .filter((c) => c.marketId !== market.id)
+    .filter((c) => !search || `${c.name} ${c.code}`.toLowerCase().includes(search.toLowerCase()));
+  const toggle = (id: string) => setPicked((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+
+  return (
+    <div className="app-card mb-6 p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-bold text-ink">Customers in {market.name}</p>
+          <p className="text-xs text-ink/50">{members.length} customer{members.length === 1 ? "" : "s"} grouped under this destination</p>
+        </div>
+        <button onClick={onClose} className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink/60 hover:text-ink">Close</button>
+      </div>
+      {error && <p className="mb-3 rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/50">In this market</p>
+          <div className="max-h-72 divide-y divide-line overflow-y-auto rounded-xl border border-line">
+            {members.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                <span><span className="font-semibold text-ink">{c.name}</span> <span className="text-xs text-ink/40">{c.code}{c.phone ? ` · ${c.phone}` : ""}</span></span>
+                <button disabled={busy} onClick={() => apply({ remove: [c.id] })} className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50">Remove</button>
+              </div>
+            ))}
+            {members.length === 0 && <p className="px-3 py-6 text-center text-sm text-ink/40">No customers yet.</p>}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/50">Add customers</p>
+          <input className={inputClass} placeholder="Search customers…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="mt-2 max-h-60 divide-y divide-line overflow-y-auto rounded-xl border border-line">
+            {candidates.map((c) => (
+              <label key={c.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-field/50">
+                <input type="checkbox" checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+                <span className="font-semibold text-ink">{c.name}</span>
+                <span className="text-xs text-ink/40">{c.code}</span>
+                {c.market && <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">now: {c.market.name}</span>}
+              </label>
+            ))}
+            {candidates.length === 0 && <p className="px-3 py-6 text-center text-sm text-ink/40">No customers to add.</p>}
+          </div>
+          <button disabled={busy || picked.size === 0} onClick={() => apply({ add: [...picked] })} className="mt-3 inline-flex min-h-10 items-center gap-2 app-button-primary disabled:opacity-50">
+            <Plus className="h-4 w-4" /> Add {picked.size || ""} selected
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function MarketsPage() {
   const [rows, setRows] = useState<MarketRow[]>(() => getCachedFirst<ApiEnvelope<MarketRow[]>>("/market-planning/markets")?.data ?? []);
@@ -265,12 +352,14 @@ export function MarketsPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [managingId, setManagingId] = useState<string | null>(null);
 
   function load() {
     setLoadError("");
     Promise.all([
       apiFetch<ApiEnvelope<MarketRow[]>>("/market-planning/markets"),
-      apiFetch<ApiEnvelope<CompanyUserOption[]>>("/identity/users").catch(() => ({ data: [] as CompanyUserOption[] }))
+      // Sales-side accounts only — never the full user list (admins etc.).
+      apiFetch<ApiEnvelope<CompanyUserOption[]>>("/market-planning/markets/assignable-marketers").catch(() => ({ data: [] as CompanyUserOption[] }))
     ])
       .then(([m, u]) => { setRows(m.data ?? []); setUsers(u.data ?? []); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
@@ -326,6 +415,10 @@ export function MarketsPage() {
         {createError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-4">{createError}</p>}
       </form>
 
+      {managingId && rows.find((r) => r.id === managingId) && (
+        <MarketCustomersPanel market={rows.find((r) => r.id === managingId)!} onClose={() => setManagingId(null)} onChanged={() => { invalidateCache("/market-planning/markets", true); load(); }} />
+      )}
+
       <DataTable<MarketRow>
         rows={rows}
         loading={loading}
@@ -345,6 +438,15 @@ export function MarketsPage() {
                 <option value="">Unassigned</option>
                 {users.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>)}
               </select>
+            )
+          },
+          {
+            key: "customerCount",
+            label: "Customers",
+            render: (row) => (
+              <button onClick={() => setManagingId(managingId === row.id ? null : row.id)} className="rounded-lg border border-line bg-white px-3 py-1.5 text-sm font-semibold text-brand hover:border-brand">
+                {row.customerCount ?? 0} · Manage
+              </button>
             )
           },
           { key: "isActive", label: "Status", render: (row) => (row.isActive ? "Active" : "Inactive") }

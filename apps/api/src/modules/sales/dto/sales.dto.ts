@@ -17,6 +17,10 @@ export class SalesQueryDto {
 
   @IsOptional()
   @IsUUID()
+  marketId?: string;
+
+  @IsOptional()
+  @IsUUID()
   productId?: string;
 
   @IsOptional()
@@ -58,6 +62,10 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsUUID()
   customerGroupId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  marketId?: string;
 
   @IsString()
   @MaxLength(30)
@@ -115,6 +123,11 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsUUID()
   customerGroupId?: string;
+
+  // null clears the market (IsOptional lets null through).
+  @IsOptional()
+  @IsUUID()
+  marketId?: string | null;
 
   @IsOptional()
   @IsString()

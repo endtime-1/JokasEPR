@@ -18,6 +18,7 @@ import {
   ApproveMarketTargetDto,
   CalculateMrpDto,
   ConvertRecommendationDto,
+  AssignMarketCustomersDto,
   CreateMarketDto,
   CreateMarketTargetDto,
   CreateProductionExecutionDto,
@@ -200,7 +201,58 @@ export class MarketPlanningService {
       orderBy: { name: "asc" }
     });
     const assignees = await this.userMap(user.companyId, rows.map((r) => r.assignedUserId).filter((id): id is string => !!id));
-    return { data: rows.map((r) => ({ ...r, assignedUser: r.assignedUserId ? assignees.get(r.assignedUserId) : undefined })) };
+    const counts = await this.prisma.customer.groupBy({
+      by: ["marketId"],
+      where: { companyId: user.companyId, deletedAt: null, marketId: { not: null } },
+      _count: { _all: true }
+    });
+    const customerCount = new Map(counts.map((c) => [c.marketId as string, c._count._all]));
+    return { data: rows.map((r) => ({ ...r, customerCount: customerCount.get(r.id) ?? 0, assignedUser: r.assignedUserId ? assignees.get(r.assignedUserId) : undefined })) };
+  }
+
+  // Roles a market can be assigned to. A manager picking a marketer should only
+  // ever see (and be able to pick) sales-side accounts — not admins, finance,
+  // etc. Enforced on create/update as well as in this picker list.
+  private static readonly ASSIGNABLE_ROLES = ["Marketer", "Sales Officer", "Sales Manager"];
+
+  async listAssignableMarketers(user: AuthenticatedUser) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        status: "ACTIVE",
+        roles: { some: { role: { name: { in: MarketPlanningService.ASSIGNABLE_ROLES } } } }
+      },
+      select: { id: true, fullName: true, email: true, roles: { select: { role: { select: { name: true } } } } },
+      orderBy: { fullName: "asc" }
+    });
+    return { data: users.map((u) => ({ id: u.id, fullName: u.fullName, email: u.email, roles: u.roles.map((r) => r.role.name) })) };
+  }
+
+  // Customers grouped under this market (its destination list).
+  async listMarketCustomers(user: AuthenticatedUser, marketId: string) {
+    const market = await this.prisma.market.findFirst({ where: { id: marketId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
+    if (!market) throw new NotFoundException("Market was not found.");
+    const data = await this.prisma.customer.findMany({
+      where: { companyId: user.companyId, deletedAt: null, marketId },
+      select: { id: true, code: true, name: true, phone: true, address: true, status: true },
+      orderBy: { name: "asc" }
+    });
+    return { data };
+  }
+
+  async assignMarketCustomers(user: AuthenticatedUser, marketId: string, dto: AssignMarketCustomersDto, context: RequestContext) {
+    const market = await this.prisma.market.findFirst({ where: { id: marketId, companyId: user.companyId, deletedAt: null } });
+    if (!market) throw new NotFoundException("Market was not found.");
+    const add = [...new Set(dto.add ?? [])];
+    const remove = [...new Set(dto.remove ?? [])];
+    const [added, removed] = await this.prisma.$transaction([
+      this.prisma.customer.updateMany({ where: { companyId: user.companyId, deletedAt: null, id: { in: add } }, data: { marketId, updatedById: user.id } }),
+      // Only detach customers that really belong to this market.
+      this.prisma.customer.updateMany({ where: { companyId: user.companyId, deletedAt: null, marketId, id: { in: remove } }, data: { marketId: null, updatedById: user.id } })
+    ]);
+    await this.writeAudit(user, "UPDATE", "Market", marketId, `Customers for market ${market.name}: +${added.count} / -${removed.count}`, context, { branchId: market.branchId ?? undefined });
+    return { data: { added: added.count, removed: removed.count } };
   }
 
   // What a Marketer's own "my market(s)" UI reads — also used internally by
@@ -257,8 +309,11 @@ export class MarketPlanningService {
   }
 
   private async requireCompanyUser(companyId: string, userId: string) {
-    const found = await this.prisma.user.findFirst({ where: { id: userId, companyId }, select: { id: true } });
-    if (!found) throw new NotFoundException("User was not found in this company.");
+    const found = await this.prisma.user.findFirst({
+      where: { id: userId, companyId, deletedAt: null, roles: { some: { role: { name: { in: MarketPlanningService.ASSIGNABLE_ROLES } } } } },
+      select: { id: true }
+    });
+    if (!found) throw new BadRequestException("A market can only be assigned to a sales account (Marketer, Sales Officer or Sales Manager).");
     return found;
   }
 

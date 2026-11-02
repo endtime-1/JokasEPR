@@ -159,6 +159,12 @@ export class CreateMarketDto {
   notes?: string;
 }
 
+// Add and/or remove customers from a market's destination list.
+export class AssignMarketCustomersDto {
+  @IsOptional() @IsArray() @IsUUID(undefined, { each: true }) add?: string[];
+  @IsOptional() @IsArray() @IsUUID(undefined, { each: true }) remove?: string[];
+}
+
 export class UpdateMarketDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsString() @MaxLength(40) code?: string;

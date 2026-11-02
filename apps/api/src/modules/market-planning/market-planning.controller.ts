@@ -9,6 +9,7 @@ import {
   ApproveMarketTargetDto,
   CalculateMrpDto,
   ConvertRecommendationDto,
+  AssignMarketCustomersDto,
   CreateMarketDto,
   CreateMarketTargetDto,
   CreateProductionExecutionDto,
@@ -41,6 +42,26 @@ export class MarketPlanningController {
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
   markets(@CurrentUser() user: AuthenticatedUser) {
     return this.marketPlanningService.listMarkets(user);
+  }
+
+  // Only sales-side accounts — what the "assign marketer" picker reads, so a
+  // manager never sees admins/finance/etc. (replaces the open /identity/users).
+  @Get("markets/assignable-marketers")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
+  assignableMarketers(@CurrentUser() user: AuthenticatedUser) {
+    return this.marketPlanningService.listAssignableMarketers(user);
+  }
+
+  @Get("markets/:id/customers")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
+  marketCustomers(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.marketPlanningService.listMarketCustomers(user, id);
+  }
+
+  @Post("markets/:id/customers")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  assignMarketCustomers(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: AssignMarketCustomersDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.assignMarketCustomers(user, id, dto, { ipAddress, userAgent });
   }
 
   @Get("markets/mine")

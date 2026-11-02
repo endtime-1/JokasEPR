@@ -497,8 +497,8 @@ export function SalesDashboardPage() {
 
 type Customer = {
   id: string; code: string; name: string; phone?: string; email?: string; address?: string; status: string;
-  branchId?: string; customerGroupId?: string;
-  branch?: { name: string }; customerGroup?: { name: string };
+  branchId?: string; customerGroupId?: string; marketId?: string | null;
+  branch?: { name: string }; customerGroup?: { name: string }; market?: { id: string; name: string } | null;
   creditLimits?: Array<{ creditLimit: number; currentBalance: number }>;
 };
 
@@ -509,13 +509,20 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   const router = useRouter();
   const [rows, setRows] = useState<Customer[]>(() => getCachedFirst<ApiEnvelope<Customer[]>>("/sales/customers")?.data ?? []);
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({ branchId: "", customerGroupId: "", code: "", name: "", phone: "", email: "", address: "", creditLimit: "" });
+  const [form, setForm] = useState({ branchId: "", customerGroupId: "", marketId: "", code: "", name: "", phone: "", email: "", address: "", creditLimit: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/sales/customers"));
+  // Markets (destinations) for the picker; empty if the user can't read them.
+  const [markets, setMarkets] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    apiFetch<ApiEnvelope<Array<{ id: string; name: string }>>>("/market-planning/markets")
+      .then((r) => setMarkets(r.data ?? []))
+      .catch(() => setMarkets([]));
+  }, []);
 
   const [editRow, setEditRow] = useState<Customer | null>(null);
-  const [editForm, setEditForm] = useState({ branchId: "", customerGroupId: "", name: "", phone: "", email: "", address: "", status: "ACTIVE" });
+  const [editForm, setEditForm] = useState({ branchId: "", customerGroupId: "", marketId: "", name: "", phone: "", email: "", address: "", status: "ACTIVE" });
   const [editError, setEditError] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleteRow, setDeleteRow] = useState<Customer | null>(null);
@@ -544,6 +551,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
     setEditForm({
       branchId: row.branchId ?? "",
       customerGroupId: row.customerGroupId ?? "",
+      marketId: row.marketId ?? "",
       name: row.name ?? "",
       phone: row.phone ?? "",
       email: row.email ?? "",
@@ -562,6 +570,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
         body: JSON.stringify({
           branchId: editForm.branchId || undefined,
           customerGroupId: editForm.customerGroupId || undefined,
+          marketId: editForm.marketId || null,
           name: editForm.name,
           phone: editForm.phone || undefined,
           email: editForm.email || undefined,
@@ -597,6 +606,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
           ...form,
           branchId: form.branchId || opts.branches[0]?.id,
           customerGroupId: form.customerGroupId || undefined,
+          marketId: form.marketId || undefined,
           email: form.email || undefined,
           creditLimit: form.creditLimit ? Number(form.creditLimit) : 0,
         }),
@@ -629,6 +639,12 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
                 <select value={form.customerGroupId} onChange={f("customerGroupId")} className={inputCls}>
                   <option value="">— None —</option>
                   {opts.customerGroups.map((g) => <option key={g.id} value={g.id}>{g.code} {g.name}</option>)}
+                </select>
+              </div>
+              <div><FormLabel>Market / Destination</FormLabel>
+                <select value={form.marketId} onChange={f("marketId")} className={inputCls}>
+                  <option value="">— None —</option>
+                  {markets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
               </div>
               <div><FormLabel>Code *</FormLabel><input required value={form.code} onChange={f("code")} placeholder="e.g. CUST-001" className={inputCls} /></div>
@@ -676,6 +692,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
             { key: "code",          label: "Code" },
             { key: "name",          label: "Name", render: (r) => <Link href={`/sales/customers/${r.id}`} className="font-medium text-brand hover:underline">{r.name as string}</Link> },
             { key: "group",         label: "Group",   render: (r) => (r.customerGroup as { name: string } | undefined)?.name ?? "—" },
+            { key: "market",        label: "Market",  render: (r) => (r.market as { name: string } | null | undefined)?.name ?? "—" },
             { key: "branch",        label: "Branch",  render: (r) => (r.branch as { name: string } | undefined)?.name ?? "—" },
             { key: "phone",         label: "Phone",   render: (r) => String(r.phone ?? "—") },
             { key: "email",         label: "Email",   render: (r) => String(r.email ?? "—") },
@@ -711,6 +728,12 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
             <select value={editForm.customerGroupId} onChange={ef("customerGroupId")} className={inputCls}>
               <option value="">— None —</option>
               {opts.customerGroups.map((g) => <option key={g.id} value={g.id}>{g.code} {g.name}</option>)}
+            </select>
+          </div>
+          <div><FormLabel>Market / Destination</FormLabel>
+            <select value={editForm.marketId} onChange={ef("marketId")} className={inputCls}>
+              <option value="">— None —</option>
+              {markets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </div>
           <div><FormLabel>Name *</FormLabel><input required value={editForm.name} onChange={ef("name")} className={inputCls} /></div>
