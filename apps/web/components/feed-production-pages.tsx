@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -8,7 +8,7 @@ import type { LucideIcon } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { EmptyState, StatusBadge } from "./ui";
-import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { buildAutoColumns } from "../lib/auto-columns";
 import { groupByFeedForm } from "../lib/feed";
 import { useApiRecovery } from "../lib/use-api-recovery";
@@ -3158,108 +3158,7 @@ export function InternalFeedTransferPage() {
   );
 }
 
-export function FeedReportsPage() {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [downloading, setDownloading] = useState<string | null>(null);
-  const [err, setErr] = useState("");
-
-  async function download(reportPath: string, filename: string) {
-    setDownloading(filename);
-    setErr("");
-    try {
-      const params = new URLSearchParams();
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-      const qs = params.toString();
-      await downloadReport(`${reportPath}${qs ? `?${qs}` : ""}`, filename);
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Download failed");
-    } finally {
-      setDownloading(null);
-    }
-  }
-
-  const reports = [
-    { id: "summary", label: "Feed Production Summary", description: "Batches, quantities, costs, and margins across all production runs.", path: "/feed-production/reports/summary.csv", filename: "feed-production-summary.csv", icon: ChartBar },
-  ];
-
-  return (
-    <>
-      <PageHeader title="Feed Production Reports" subtitle="Export feed formula, production, cost, quality, stock, and transfer reports." />
-      <div className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
-        <h3 className="mb-4 text-sm font-bold text-ink">Date Range Filter</h3>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-ink/55">From date</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="min-h-10 w-full app-control"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-ink/55">To date</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="min-h-10 w-full app-control"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              onClick={() => { setStartDate(""); setEndDate(""); }}
-              className="min-h-10 rounded-lg border border-line bg-white px-4 text-sm font-semibold text-ink/50 transition hover:text-ink"
-            >
-              Clear dates
-            </button>
-          </div>
-        </div>
-        {(startDate || endDate) && (
-          <p className="mt-3 text-xs text-ink/50">
-            Filtering:{" "}
-            {startDate && endDate ? `${startDate} → ${endDate}` : startDate ? `from ${startDate}` : `until ${endDate}`}
-          </p>
-        )}
-      </div>
-      {err && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          <CircleAlert className="h-4 w-4 shrink-0" /><span>{err}</span>
-          <button onClick={() => setErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
-        </div>
-      )}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {reports.map((report) => {
-          const Icon = report.icon;
-          const isDownloading = downloading === report.filename;
-          return (
-            <div key={report.id} className="flex flex-col gap-4 rounded-2xl border border-line bg-white p-5 shadow-panel">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10">
-                  <Icon className="h-5 w-5 text-brand" aria-hidden />
-                </div>
-                <div>
-                  <p className="font-semibold text-ink">{report.label}</p>
-                  <p className="mt-0.5 text-xs text-ink/50">{report.description}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => download(report.path, report.filename)}
-                disabled={isDownloading}
-                className="mt-auto inline-flex min-h-9 items-center justify-center gap-2 app-button-primary disabled:opacity-50"
-              >
-                <Download className="h-4 w-4" aria-hidden />
-                {isDownloading ? "Downloading…" : "Download CSV"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
-}
+export { FeedReportsPage } from "./feed-reports";
 
 type PackagingRow = {
   id: string;

@@ -306,6 +306,21 @@ export class FeedProductionController {
     return this.feedProductionService.simulatePredictive(user, dto);
   }
 
+  @Get("reports/weekly")
+  @RequirePermissions(PERMISSIONS.FEED_READ)
+  weeklyReport(@CurrentUser() user: AuthenticatedUser, @Query() query: FeedProductionQueryDto) {
+    return this.feedProductionService.weeklyReport(user, query);
+  }
+
+  @Get("reports/weekly.csv")
+  @RequirePermissions(PERMISSIONS.FEED_READ)
+  async weeklyReportCsv(@CurrentUser() user: AuthenticatedUser, @Query() query: FeedProductionQueryDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    const csv = await this.feedProductionService.weeklyReportCsv(user, query, { ipAddress, userAgent });
+    response.setHeader("content-type", "text/csv");
+    response.setHeader("content-disposition", "attachment; filename=feed-mill-report.csv");
+    response.send(csv);
+  }
+
   @Get("reports/summary.csv")
   @RequirePermissions(PERMISSIONS.FEED_READ)
   async report(@CurrentUser() user: AuthenticatedUser, @Query() query: FeedProductionQueryDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

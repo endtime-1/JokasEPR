@@ -1540,6 +1540,338 @@ export class FeedProductionService {
     return rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
+  // Period report (weekly by default): raw materials used / received / left in
+  // store, production output, finished feed, quality, costs, daily trend and a
+  // comparison against the previous period of the same length.
+  async weeklyReport(user: AuthenticatedUser, query: FeedProductionQueryDto) {
+    const { start, endExclusive, days, startStr, endStr } = this.reportPeriod(query);
+    const spanMs = endExclusive.getTime() - start.getTime();
+    const prevStart = new Date(start.getTime() - spanMs);
+    const range = { gte: start, lt: endExclusive };
+    const scope = { branchId: query.branchId, productionSiteId: query.productionSiteId, warehouseId: query.warehouseId };
+
+    const warehouseId = user.hasGlobalAccess || user.warehouseIds.length === 0
+      ? query.warehouseId
+      : (query.warehouseId && user.warehouseIds.includes(query.warehouseId) ? query.warehouseId : { in: user.warehouseIds });
+
+    const [usageRows, batches, prevBatchAgg, prevUsageAgg, inventoryItems, finishedStock, transfers, externalSales, qcGroups] = await Promise.all([
+      this.prisma.feedRawMaterialUsage.findMany({
+        where: { ...this.usageWhere(user, scope), productionBatch: { deletedAt: null, productionDate: range } },
+        select: { rawMaterialId: true, quantityKg: true, unitCost: true, wastageKg: true, rawMaterial: { select: { name: true, sku: true, uom: { select: { symbol: true } } } }, productionBatch: { select: { productionDate: true } } }
+      }),
+      this.prisma.feedProductionBatch.findMany({
+        where: { ...this.batchWhere(user, scope), productionDate: range },
+        select: {
+          id: true, batchNumber: true, status: true, producedQuantityKg: true, wastageKg: true, productionDate: true, finishedProductId: true,
+          finishedProduct: { select: { name: true, sku: true } },
+          productionSite: { select: { name: true } },
+          costs: { select: { rawMaterialCost: true, laborCost: true, packagingCost: true, overheadCost: true, expectedSalesValue: true } }
+        },
+        orderBy: { productionDate: "asc" }
+      }),
+      this.prisma.feedProductionBatch.aggregate({
+        where: { ...this.batchWhere(user, scope), productionDate: { gte: prevStart, lt: start } },
+        _sum: { producedQuantityKg: true, wastageKg: true },
+        _count: { _all: true }
+      }),
+      this.prisma.feedRawMaterialUsage.aggregate({
+        where: { ...this.usageWhere(user, scope), productionBatch: { deletedAt: null, productionDate: { gte: prevStart, lt: start } } },
+        _sum: { quantityKg: true }
+      }),
+      this.prisma.inventoryItem.findMany({
+        where: { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), warehouseId, product: { type: "RAW_MATERIAL", deletedAt: null } },
+        select: { productId: true, warehouseId: true, quantityOnHand: true, reorderLevel: true, product: { select: { name: true, sku: true, uom: { select: { symbol: true } } } } }
+      }),
+      this.prisma.finishedFeedStock.findMany({
+        where: this.finishedStockWhere(user, scope),
+        select: { productId: true, quantityKg: true, bag50KgCount: true, unitCost: true, product: { select: { name: true, sku: true } } }
+      }),
+      this.prisma.feedInternalTransfer.findMany({
+        where: { ...this.transferWhere(user, scope), transferDate: range },
+        select: { quantityKg: true, toFarm: { select: { name: true } } }
+      }),
+      this.prisma.feedExternalSale.findMany({
+        where: { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), saleDate: range },
+        select: { quantityKg: true, totalValue: true, customerName: true }
+      }),
+      this.prisma.feedQualityCheck.groupBy({
+        by: ["status"],
+        where: { ...this.qualityWhere(user, scope), checkedAt: range },
+        _count: { _all: true }
+      })
+    ]);
+
+    // ── Raw material movements, to rebuild opening / closing balances ──────────
+    const rawIds = [...new Set(inventoryItems.map((i) => i.productId))];
+    const whIds = new Set(inventoryItems.map((i) => i.warehouseId));
+    const [movements, stockLots] = rawIds.length
+      ? await Promise.all([
+          this.prisma.stockMovement.findMany({
+            where: {
+              companyId: user.companyId, deletedAt: null, productId: { in: rawIds }, movementDate: { gte: start },
+              OR: [{ warehouseId: { in: [...whIds] } }, { toWarehouseId: { in: [...whIds] } }, { fromWarehouseId: { in: [...whIds] } }]
+            },
+            select: { productId: true, movementType: true, quantity: true, movementDate: true, warehouseId: true, toWarehouseId: true, fromWarehouseId: true }
+          }),
+          this.prisma.stockBatch.findMany({
+            where: { companyId: user.companyId, deletedAt: null, productId: { in: rawIds }, quantityRemaining: { gt: 0 }, warehouseId: { in: [...whIds] } },
+            select: { productId: true, quantityRemaining: true, unitCost: true }
+          })
+        ])
+      : [[], []];
+
+    type Flow = { received: number; adjIn: number; adjOut: number; used: number; afterEnd: number };
+    const flows = new Map<string, Flow>();
+    const flowOf = (id: string): Flow => {
+      let f = flows.get(id);
+      if (!f) { f = { received: 0, adjIn: 0, adjOut: 0, used: 0, afterEnd: 0 }; flows.set(id, f); }
+      return f;
+    };
+    for (const m of movements) {
+      const qty = Number(m.quantity);
+      const type = m.movementType as string;
+      let direction = 0;
+      if (["PURCHASE_RECEIPT", "OPENING_BALANCE", "ADJUSTMENT_IN", "RETURN_IN", "PRODUCTION_OUTPUT"].includes(type)) {
+        direction = whIds.has((m.toWarehouseId ?? m.warehouseId) as string) ? 1 : 0;
+      } else if (["PRODUCTION_INPUT", "SALE_DISPATCH", "ADJUSTMENT_OUT", "WASTE", "RETURN_OUT"].includes(type)) {
+        direction = whIds.has((m.fromWarehouseId ?? m.warehouseId) as string) ? -1 : 0;
+      } else if (type === "TRANSFER") {
+        const into = m.toWarehouseId ? whIds.has(m.toWarehouseId) : false;
+        const out = m.fromWarehouseId ? whIds.has(m.fromWarehouseId) : false;
+        direction = into && !out ? 1 : out && !into ? -1 : 0;
+      }
+      if (!direction) continue;
+      const f = flowOf(m.productId);
+      if (m.movementDate >= endExclusive) { f.afterEnd += direction * qty; continue; }
+      if (type === "PURCHASE_RECEIPT" || type === "OPENING_BALANCE") f.received += qty;
+      else if (type === "PRODUCTION_INPUT") f.used += qty;
+      else if (direction > 0) f.adjIn += qty;
+      else f.adjOut += qty;
+    }
+
+    const lotCost = new Map<string, { qty: number; value: number }>();
+    for (const lot of stockLots) {
+      const c = lotCost.get(lot.productId) ?? { qty: 0, value: 0 };
+      c.qty += Number(lot.quantityRemaining);
+      c.value += Number(lot.quantityRemaining) * Number(lot.unitCost ?? 0);
+      lotCost.set(lot.productId, c);
+    }
+
+    // ── Per-material usage (from the batch usage records) ──────────────────────
+    const usage = new Map<string, { name: string; sku: string; uom: string; usedKg: number; wastageKg: number; cost: number }>();
+    for (const r of usageRows) {
+      const u = usage.get(r.rawMaterialId) ?? { name: r.rawMaterial.name, sku: r.rawMaterial.sku, uom: r.rawMaterial.uom?.symbol ?? "kg", usedKg: 0, wastageKg: 0, cost: 0 };
+      u.usedKg += Number(r.quantityKg);
+      u.wastageKg += Number(r.wastageKg);
+      u.cost += Number(r.quantityKg) * Number(r.unitCost);
+      usage.set(r.rawMaterialId, u);
+    }
+
+    const stock = new Map<string, { name: string; sku: string; uom: string; onHand: number; reorder: number }>();
+    for (const i of inventoryItems) {
+      const s = stock.get(i.productId) ?? { name: i.product.name, sku: i.product.sku, uom: i.product.uom?.symbol ?? "kg", onHand: 0, reorder: 0 };
+      s.onHand += Number(i.quantityOnHand);
+      s.reorder += Number(i.reorderLevel);
+      stock.set(i.productId, s);
+    }
+
+    const totalUsedKg = [...usage.values()].reduce((s, u) => s + u.usedKg, 0);
+    const round = (n: number, d = 2) => Number(n.toFixed(d));
+    const materialIds = new Set([...stock.keys(), ...usage.keys()]);
+    const rawMaterials = [...materialIds].map((id) => {
+      const s = stock.get(id);
+      const u = usage.get(id);
+      const f = flows.get(id) ?? { received: 0, adjIn: 0, adjOut: 0, used: 0, afterEnd: 0 };
+      const onHandNow = s?.onHand ?? 0;
+      const closing = onHandNow - f.afterEnd;
+      const opening = closing - (f.received + f.adjIn - f.used - f.adjOut);
+      const usedKg = u?.usedKg ?? 0;
+      const avgDailyUse = usedKg / days;
+      const daysCover = avgDailyUse > 0 ? closing / avgDailyUse : null;
+      const lot = lotCost.get(id);
+      const unitCost = lot && lot.qty > 0 ? lot.value / lot.qty : usedKg > 0 ? (u?.cost ?? 0) / usedKg : 0;
+      const reorderLevel = s?.reorder ?? 0;
+      const status = closing <= 0 ? "OUT" : (reorderLevel > 0 && closing <= reorderLevel) || (daysCover !== null && daysCover < 7) ? "LOW" : "OK";
+      return {
+        productId: id, name: s?.name ?? u?.name ?? "-", sku: s?.sku ?? u?.sku ?? "", uom: s?.uom ?? u?.uom ?? "kg",
+        openingKg: round(opening), receivedKg: round(f.received), adjustmentsInKg: round(f.adjIn), usedKg: round(usedKg), adjustmentsOutKg: round(f.adjOut),
+        wastageKg: round(u?.wastageKg ?? 0), closingKg: round(closing), reorderLevelKg: round(reorderLevel),
+        avgDailyUseKg: round(avgDailyUse), daysCover: daysCover === null ? null : round(daysCover, 1),
+        unitCost: round(unitCost), usedCost: round(u?.cost ?? 0), stockValue: round(Math.max(closing, 0) * unitCost),
+        usageSharePct: totalUsedKg > 0 ? round((usedKg / totalUsedKg) * 100, 1) : 0, status
+      };
+    }).sort((a, b) => b.usedKg - a.usedKg || a.name.localeCompare(b.name));
+
+    // ── Production ──────────────────────────────────────────────────────────────
+    const dayKeys: string[] = [];
+    for (let i = 0; i < days; i++) dayKeys.push(new Date(start.getTime() + i * 86400000).toISOString().slice(0, 10));
+    const daily = new Map(dayKeys.map((d) => [d, { date: d, producedKg: 0, rawUsedKg: 0, wastageKg: 0, batches: 0 }]));
+    const byProduct = new Map<string, { productId: string; name: string; sku: string; batches: number; producedKg: number; wastageKg: number; cost: number; salesValue: number }>();
+    const cost = { rawMaterial: 0, labor: 0, packaging: 0, overhead: 0, expectedSales: 0 };
+    let producedKg = 0;
+    let batchWastageKg = 0;
+    for (const b of batches) {
+      const kg = Number(b.producedQuantityKg);
+      const waste = Number(b.wastageKg);
+      producedKg += kg;
+      batchWastageKg += waste;
+      const d = daily.get(b.productionDate.toISOString().slice(0, 10));
+      if (d) { d.producedKg += kg; d.wastageKg += waste; d.batches += 1; }
+      const p = byProduct.get(b.finishedProductId) ?? { productId: b.finishedProductId, name: b.finishedProduct.name, sku: b.finishedProduct.sku, batches: 0, producedKg: 0, wastageKg: 0, cost: 0, salesValue: 0 };
+      p.batches += 1; p.producedKg += kg; p.wastageKg += waste;
+      for (const c of b.costs) {
+        const total = Number(c.rawMaterialCost) + Number(c.laborCost) + Number(c.packagingCost) + Number(c.overheadCost);
+        cost.rawMaterial += Number(c.rawMaterialCost); cost.labor += Number(c.laborCost); cost.packaging += Number(c.packagingCost); cost.overhead += Number(c.overheadCost); cost.expectedSales += Number(c.expectedSalesValue);
+        p.cost += total; p.salesValue += Number(c.expectedSalesValue);
+      }
+      byProduct.set(b.finishedProductId, p);
+    }
+    for (const r of usageRows) {
+      const d = daily.get(r.productionBatch.productionDate.toISOString().slice(0, 10));
+      if (d) d.rawUsedKg += Number(r.quantityKg);
+    }
+    const totalCost = cost.rawMaterial + cost.labor + cost.packaging + cost.overhead;
+
+    // ── Finished feed, dispatch, quality ────────────────────────────────────────
+    const finished = new Map<string, { name: string; sku: string; quantityKg: number; bags: number; value: number }>();
+    for (const s of finishedStock) {
+      const f = finished.get(s.productId) ?? { name: s.product.name, sku: s.product.sku, quantityKg: 0, bags: 0, value: 0 };
+      f.quantityKg += Number(s.quantityKg); f.bags += s.bag50KgCount; f.value += Number(s.quantityKg) * Number(s.unitCost);
+      finished.set(s.productId, f);
+    }
+    const transferredKg = transfers.reduce((s, t) => s + Number(t.quantityKg), 0);
+    const transferDest = new Map<string, number>();
+    for (const t of transfers) { const k = t.toFarm?.name ?? "Other"; transferDest.set(k, (transferDest.get(k) ?? 0) + Number(t.quantityKg)); }
+    const soldKg = externalSales.reduce((s, x) => s + Number(x.quantityKg), 0);
+    const soldValue = externalSales.reduce((s, x) => s + Number(x.totalValue), 0);
+    const qc = { passed: 0, failed: 0, pending: 0, total: 0 };
+    for (const g of qcGroups) {
+      const n = g._count._all;
+      qc.total += n;
+      if (["APPROVED", "PASSED"].includes(g.status as string)) qc.passed += n;
+      else if (["FAILED", "REJECTED"].includes(g.status as string)) qc.failed += n;
+      else qc.pending += n;
+    }
+
+    // ── Totals, comparison and insights ─────────────────────────────────────────
+    const prevProducedKg = Number(prevBatchAgg._sum.producedQuantityKg ?? 0);
+    const prevUsedKg = Number(prevUsageAgg._sum.quantityKg ?? 0);
+    const prevWastageKg = Number(prevBatchAgg._sum.wastageKg ?? 0);
+    const prevBatches = prevBatchAgg._count._all;
+    const delta = (cur: number, prev: number) => (prev > 0 ? round(((cur - prev) / prev) * 100, 1) : null);
+    const stockValue = rawMaterials.reduce((s, r) => s + r.stockValue, 0);
+    const wastagePct = producedKg + batchWastageKg > 0 ? round((batchWastageKg / (producedKg + batchWastageKg)) * 100, 1) : 0;
+
+    const insights: Array<{ level: "critical" | "warning" | "info" | "good"; text: string }> = [];
+    for (const r of rawMaterials.filter((m) => m.status === "OUT")) insights.push({ level: "critical", text: `${r.name} is out of stock.` });
+    for (const r of rawMaterials.filter((m) => m.status === "LOW")) {
+      insights.push({ level: "warning", text: `${r.name} is running low — ${r.closingKg.toLocaleString("en-US")} kg left${r.daysCover !== null ? ` (about ${r.daysCover} days at this week's rate)` : ""}.` });
+    }
+    if (wastagePct > 3) insights.push({ level: "warning", text: `Wastage was ${wastagePct}% of output this period — above the 3% target.` });
+    if (qc.pending > 0) insights.push({ level: "warning", text: `${qc.pending} quality check${qc.pending > 1 ? "s are" : " is"} still pending approval.` });
+    if (qc.failed > 0) insights.push({ level: "critical", text: `${qc.failed} quality check${qc.failed > 1 ? "s" : ""} failed this period.` });
+    const dp = delta(producedKg, prevProducedKg);
+    if (dp !== null) insights.push({ level: dp >= 0 ? "good" : "info", text: `Production is ${dp >= 0 ? "up" : "down"} ${Math.abs(dp)}% on the previous period.` });
+    if (batches.length === 0) insights.push({ level: "info", text: "No production batches were posted in this period." });
+
+    return {
+      data: {
+        period: { startDate: startStr, endDate: endStr, days },
+        summary: {
+          batches: batches.length,
+          producedKg: round(producedKg),
+          bags50Kg: Math.floor(producedKg / 50),
+          rawUsedKg: round(totalUsedKg),
+          rawWastageKg: round(rawMaterials.reduce((s, r) => s + r.wastageKg, 0)),
+          batchWastageKg: round(batchWastageKg),
+          wastagePct,
+          yieldPct: totalUsedKg > 0 ? round((producedKg / totalUsedKg) * 100, 1) : 0,
+          rawStockKg: round(rawMaterials.reduce((s, r) => s + Math.max(r.closingKg, 0), 0)),
+          rawStockValue: round(stockValue),
+          finishedStockKg: round([...finished.values()].reduce((s, f) => s + f.quantityKg, 0)),
+          lowStockCount: rawMaterials.filter((r) => r.status !== "OK").length,
+          transferredKg: round(transferredKg),
+          soldKg: round(soldKg),
+          soldValue: round(soldValue),
+          avgDailyProducedKg: round(producedKg / days)
+        },
+        comparison: {
+          producedKgChangePct: dp,
+          rawUsedKgChangePct: delta(totalUsedKg, prevUsedKg),
+          wastageKgChangePct: delta(batchWastageKg, prevWastageKg),
+          batchesChangePct: delta(batches.length, prevBatches),
+          previous: { producedKg: round(prevProducedKg), rawUsedKg: round(prevUsedKg), wastageKg: round(prevWastageKg), batches: prevBatches }
+        },
+        rawMaterials,
+        production: {
+          daily: [...daily.values()].map((d) => ({ ...d, producedKg: round(d.producedKg), rawUsedKg: round(d.rawUsedKg), wastageKg: round(d.wastageKg) })),
+          byProduct: [...byProduct.values()].map((p) => ({ ...p, producedKg: round(p.producedKg), wastageKg: round(p.wastageKg), cost: round(p.cost), salesValue: round(p.salesValue), costPerKg: p.producedKg > 0 ? round(p.cost / p.producedKg) : 0 })).sort((a, b) => b.producedKg - a.producedKg),
+          batches: batches.map((b) => ({ id: b.id, batchNumber: b.batchNumber, status: b.status, productionDate: b.productionDate, product: b.finishedProduct.name, site: b.productionSite.name, producedKg: round(Number(b.producedQuantityKg)), wastageKg: round(Number(b.wastageKg)) }))
+        },
+        finishedFeed: {
+          stock: [...finished.entries()].map(([productId, f]) => ({ productId, ...f, quantityKg: round(f.quantityKg), value: round(f.value) })).sort((a, b) => b.quantityKg - a.quantityKg),
+          transferredKg: round(transferredKg),
+          transfersByFarm: [...transferDest.entries()].map(([farm, kg]) => ({ farm, quantityKg: round(kg) })).sort((a, b) => b.quantityKg - a.quantityKg),
+          soldKg: round(soldKg),
+          soldValue: round(soldValue)
+        },
+        quality: { ...qc, passRatePct: qc.passed + qc.failed > 0 ? round((qc.passed / (qc.passed + qc.failed)) * 100, 1) : null },
+        costs: {
+          rawMaterial: round(cost.rawMaterial), labor: round(cost.labor), packaging: round(cost.packaging), overhead: round(cost.overhead),
+          total: round(totalCost), expectedSales: round(cost.expectedSales),
+          costPerKg: producedKg > 0 ? round(totalCost / producedKg) : 0,
+          profitMarginPct: this.margin(cost.expectedSales, totalCost)
+        },
+        insights
+      }
+    };
+  }
+
+  async weeklyReportCsv(user: AuthenticatedUser, query: FeedProductionQueryDto, context: RequestContext) {
+    const { data } = await this.weeklyReport(user, query);
+    const s = data.summary;
+    const rows: Array<Array<string | number>> = [
+      ["Feed Mill Report", `${data.period.startDate} to ${data.period.endDate}`],
+      [],
+      ["SUMMARY"],
+      ["Batches", s.batches], ["Produced (kg)", s.producedKg], ["50kg bags", s.bags50Kg], ["Raw materials used (kg)", s.rawUsedKg],
+      ["Yield %", s.yieldPct], ["Wastage (kg)", s.batchWastageKg], ["Wastage %", s.wastagePct],
+      ["Raw material in store (kg)", s.rawStockKg], ["Raw material stock value", s.rawStockValue], ["Finished feed in stock (kg)", s.finishedStockKg],
+      ["Transferred to farms (kg)", s.transferredKg], ["Sold externally (kg)", s.soldKg], ["External sales value", s.soldValue],
+      [],
+      ["RAW MATERIALS"],
+      ["Material", "SKU", "Opening kg", "Received kg", "Used kg", "Adjust in kg", "Adjust out kg", "Wastage kg", "Closing kg", "Reorder level kg", "Avg daily use kg", "Days cover", "Unit cost", "Cost of usage", "Stock value", "Status"],
+      ...data.rawMaterials.map((r) => [r.name, r.sku, r.openingKg, r.receivedKg, r.usedKg, r.adjustmentsInKg, r.adjustmentsOutKg, r.wastageKg, r.closingKg, r.reorderLevelKg, r.avgDailyUseKg, r.daysCover ?? "", r.unitCost, r.usedCost, r.stockValue, r.status]),
+      [],
+      ["PRODUCTION BY PRODUCT"],
+      ["Product", "SKU", "Batches", "Produced kg", "Wastage kg", "Cost", "Cost per kg", "Expected sales"],
+      ...data.production.byProduct.map((p) => [p.name, p.sku, p.batches, p.producedKg, p.wastageKg, p.cost, p.costPerKg, p.salesValue]),
+      [],
+      ["DAILY"],
+      ["Date", "Batches", "Produced kg", "Raw used kg", "Wastage kg"],
+      ...data.production.daily.map((d) => [d.date, d.batches, d.producedKg, d.rawUsedKg, d.wastageKg]),
+      [],
+      ["FINISHED FEED IN STOCK"],
+      ["Product", "SKU", "Quantity kg", "50kg bags", "Value"],
+      ...data.finishedFeed.stock.map((f) => [f.name, f.sku, f.quantityKg, f.bags, f.value])
+    ];
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "EXPORT", entityType: "Report", entityId: "feed-production.weekly", summary: `Exported feed mill report ${data.period.startDate} to ${data.period.endDate}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+  }
+
+  private reportPeriod(query: FeedProductionQueryDto) {
+    const DAY = 86400000;
+    const endStr = (query.endDate ?? new Date().toISOString()).slice(0, 10);
+    const end = new Date(`${endStr}T00:00:00.000Z`);
+    const startStr = (query.startDate ?? new Date(end.getTime() - 6 * DAY).toISOString()).slice(0, 10);
+    const start = new Date(`${startStr}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw new BadRequestException("Invalid report dates.");
+    if (start > end) throw new BadRequestException("Start date must be on or before the end date.");
+    const days = Math.round((end.getTime() - start.getTime()) / DAY) + 1;
+    if (days > 366) throw new BadRequestException("Report period cannot be longer than one year.");
+    return { start, endExclusive: new Date(end.getTime() + DAY), days, startStr, endStr };
+  }
+
   async hiproPredictive(user: AuthenticatedUser, warehouseId?: string) {
     const formulas = await this.prisma.feedFormula.findMany({
       where: this.formulaWhere(user, {}),
