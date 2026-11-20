@@ -69,6 +69,21 @@ export class FinLinksService {
     return `${this.baseUrl()}/p/receipt/${this.receiptToken(receiptId)}`;
   }
 
+  /** A till receipt link is <saleId>.<HMAC>. A POS sale never changes (a refund is its own record), so the link has no version. */
+  posReceiptToken(saleId: string): string {
+    return `${saleId}.${this.mac(`pos:${saleId}`)}`;
+  }
+
+  parsePosReceiptToken(token: string): { saleId: string } | null {
+    const parts = (token ?? "").split(".");
+    if (parts.length !== 2 || !UUID.test(parts[0]) || parts[1].length !== 32) return null;
+    return this.same(parts[1], this.mac(`pos:${parts[0]}`)) ? { saleId: parts[0] } : null;
+  }
+
+  posReceiptLink(saleId: string): string {
+    return `${this.baseUrl()}/p/pos/${this.posReceiptToken(saleId)}`;
+  }
+
   baseUrl(): string {
     return (process.env.WEB_ORIGIN || "http://localhost:3000").replace(/\/+$/, "");
   }

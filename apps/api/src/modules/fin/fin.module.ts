@@ -13,6 +13,16 @@ import { FinContactsController, FinTaxController } from "./fin-contacts.controll
 import { FinContactsService } from "./fin-contacts.service";
 import { FinCreditNotesService } from "./fin-credit-notes.service";
 import { FinCustomerPaymentsService } from "./fin-customer-payments.service";
+import { FinPosController } from "./fin-pos.controller";
+import { FinPosReceiptService } from "./fin-pos-receipt.service";
+import { FinPosService } from "./fin-pos.service";
+import { FinItemsController } from "./fin-items.controller";
+import { FinItemsService } from "./fin-items.service";
+import { FinStockService } from "./fin-stock.service";
+import { FinIntegrationsController } from "./fin-integrations.controller";
+import { FinIntegrationsScheduler } from "./fin-integrations.scheduler";
+import { FinIntegrationsService } from "./fin-integrations.service";
+import { PrismaSalesOrderSource, SALES_ORDER_SOURCE } from "./fin-integration-source";
 import { FinInvoicesService } from "./fin-invoices.service";
 import { FinLedgerService } from "./fin-ledger.service";
 import { FinLinksService } from "./fin-links.service";
@@ -39,13 +49,15 @@ import { FinTaxService } from "./fin-tax.service";
  */
 @Module({
   imports: [NotificationsModule],
-  controllers: [FinSettingsController, FinAccountingController, FinContactsController, FinTaxController, FinSalesController, FinPublicController, FinBankingController, FinWebhooksController],
+  controllers: [FinSettingsController, FinAccountingController, FinContactsController, FinTaxController, FinSalesController, FinPublicController, FinBankingController, FinWebhooksController, FinIntegrationsController, FinItemsController, FinPosController],
   providers: [
     FinAuditService, FinNumberingService, FinSettingsService, FinAccountsService, FinLedgerService, FinReportsService, FinContactsService, FinTaxService,
     FinInvoicesService, FinQuotesService, FinCustomerPaymentsService, FinCreditNotesService, FinRecurringService, FinStatementService,
     FinLinksService, FinPdfService, FinSalesShareService, FinReminderService, FinSalesScheduler,
-    FinPaymentAccountsService, FinBankPaymentsService, FinPaymentProviders, FinOnlinePaymentsService, FinReconciliationService
+    FinPaymentAccountsService, FinBankPaymentsService, FinPaymentProviders, FinOnlinePaymentsService, FinReconciliationService,
+    FinIntegrationsService, FinIntegrationsScheduler, { provide: SALES_ORDER_SOURCE, useClass: PrismaSalesOrderSource },
+    FinStockService, FinItemsService, FinPosService, FinPosReceiptService
   ],
-  exports: [FinLedgerService, FinNumberingService, FinAuditService, FinContactsService, FinTaxService, FinInvoicesService]
+  exports: [FinStockService, FinItemsService, FinLedgerService, FinNumberingService, FinAuditService, FinContactsService, FinTaxService, FinInvoicesService]
 })
 export class FinModule {}

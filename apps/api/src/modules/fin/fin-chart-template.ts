@@ -37,7 +37,8 @@ export const FIN_ACCOUNT_ROLES: Record<string, { label: string; type: FinAccount
   depreciation_expense: { label: "Depreciation expense", type: "EXPENSE" },
   general_expense: { label: "General expenses", type: "EXPENSE" },
   bank_charges: { label: "Bank and transfer charges", type: "EXPENSE" },
-  provider_fees: { label: "Payment provider fees", type: "EXPENSE" }
+  provider_fees: { label: "Payment provider fees", type: "EXPENSE" },
+  cash_over_short: { label: "Cash over / short (till differences)", type: "EXPENSE" }
 };
 
 export type FinTemplateAccount = {
@@ -161,6 +162,7 @@ export const FIN_CHART_TEMPLATE: FinTemplateAccount[] = [
   { code: "6510", name: "Insurance", type: X, parent: "6000" },
   { code: "6600", name: "Depreciation", type: X, parent: "6000", role: "depreciation_expense" },
   { code: "6700", name: "Bank Charges", type: X, parent: "6000", role: "bank_charges", description: "Bank and mobile money charges, including transfer fees" },
+  { code: "6730", name: "Cash Over / Short", type: X, parent: "6000", role: "cash_over_short", description: "Till cash counts that did not match the expected cash: a shortage is an expense, an overage a credit" },
   { code: "6720", name: "Payment Provider Fees", type: X, parent: "6000", role: "provider_fees", description: "Fees taken by the online payment provider" },
   { code: "6710", name: "Interest Expense", type: X, parent: "6000" },
   { code: "6800", name: "Marketing and Advertising", type: X, parent: "6000" },

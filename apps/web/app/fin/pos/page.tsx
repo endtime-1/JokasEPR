@@ -1,3 +1,3 @@
-import { PosPlaceholder } from "../../../components/fin/fin-route-pages";
+import { FinPosTillPage } from "../../../components/fin/fin-pos-till";
 
-export default PosPlaceholder;
+export default FinPosTillPage;

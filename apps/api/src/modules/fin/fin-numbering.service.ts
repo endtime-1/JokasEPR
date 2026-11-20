@@ -10,6 +10,8 @@ export const FIN_DOC_TYPES: Record<string, { label: string; prefix: string; incl
   RECEIPT: { label: "Receipt", prefix: "RCT" },
   QUOTE: { label: "Quote", prefix: "QUO" },
   POS_SALE: { label: "POS sale", prefix: "POS" },
+  POS_REFUND: { label: "POS refund", prefix: "RFD" },
+  POS_SESSION: { label: "Till session", prefix: "TILL" },
   BILL: { label: "Supplier bill", prefix: "BILL" },
   PAYMENT: { label: "Payment", prefix: "PAY" },
   JOURNAL: { label: "Journal entry", prefix: "JE" },

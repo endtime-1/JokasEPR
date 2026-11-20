@@ -47,6 +47,44 @@ Payment accounts, money received and paid, transfers, online invoice payments an
 - **Server settings**: `ONLINE_PAYMENT_PROVIDER=paystack`, `PAYSTACK_SECRET_KEY`, `FIN_LINK_SECRET` (see `.env.example`). On an existing chart, switch on account 2180 and make sure the roles `payment_clearing`, `provider_fees` and `bank_charges` are assigned (Accounting > Chart of Accounts).
 - New migrations: `20261120000600_fin_banking` and `..0700_fin_banking_triggers` (the second needs the TRIGGER privilege, same as before). New dependency: `exceljs`. `main.ts` now keeps the raw request body (needed to verify webhook signatures).
 
+## Links to other modules (`Settings > Integrations`, `Sales > From other modules`)
+
+Optional links that let finance pick up work from other modules. **Every link is OFF by default**, and a link only ever creates **drafts**: a finance user reviews, edits and posts them (the link code never calls the posting service; a test proves it).
+
+- **Finance pulls, nothing else changes.** A 5-minute job (and a "Sync now" button) reads newly approved Sales orders through one read-only adapter (`fin-integration-source.ts`). No Sales, Procurement or storefront code was changed, and a finance problem can never block an order. `FIN_JOBS_DISABLED=1` switches the job off.
+- **Link 1, available:** Sales order approved (status APPROVED or FULFILLED, by `stockApprovedAt`) -> DRAFT invoice. Lines copy the order as ordered (qty and price per bag, not per kg). The start line is the moment the link is switched on, every time: orders approved before it, or while it was off, are never imported. Options: default tax code, default income account, "create the finance customer automatically".
+- **Link 2, not available yet:** goods received -> draft bill needs the Purchases part of Finance v2.
+- **Matching with external_ref.** The draft carries `externalRef = "SO:<order id>"` (unique per company in the database, so one order can only ever make one draft, even with two runs at once) plus the order label and the order's total. Customers match through the contact's `externalRef = "CUST:<customer id>"`. An unmatched customer parks the order as "Needs a customer match" until finance matches it (or auto-create is on). The source reference of an invoice cannot be changed afterwards (trigger).
+- **When the order changes:** a still-draft invoice whose order is cancelled is flagged "Order cancelled" (never deleted); a posted invoice is never touched; a draft finance discarded is not made again. If the draft total differs from the order total (order-level discount, tax) the list says "Check this draft".
+- New migrations: `20261120000800_fin_integrations` (adds `externalRef`, `sourceLabel`, `sourceTotal` to `fin_invoices`, plus `fin_integration_settings` and `fin_integration_log`) and `..0900_fin_integrations_triggers`. Both have `down.sql`. Tested on MariaDB 10.11 (the production engine).
+
+## Items and stock (`/fin/items`)
+
+The finance module's own product list and stock (tables `fin_items`, `fin_stock_movements`); it does not read the ERP's products or inventory.
+
+- **Items**: SKU, name, barcode, goods or service, unit, category, selling price (tax-inclusive by default, or "plus tax"), tax code, optional income / cost-of-goods / inventory accounts, reorder level. A service never tracks stock. SKUs and barcodes are unique per company.
+- **Stock**: every change is one append-only movement (database triggers refuse edits and deletes; the only allowed change is linking a movement once to its journal entry). Cost method is **weighted average**; the last unit out takes whatever value is left, so rounding never strands a pesewa. Quantities are to 3 decimals, money to the pesewa. Stock cannot go below zero unless a supervisor allows it (the shortfall is then costed at zero).
+- **Adjustments** (stock counts, damage): by counted quantity or by change; the difference posts Dr/Cr Inventory against the "Stock adjustment gain / loss" account. **Opening stock** posts Dr Inventory, Cr Opening Balance Equity (one entry per CSV import).
+- **CSV import / export**: preview first, per-row problems listed, nothing imported unless every row is fine or "skip bad rows" is chosen; existing SKUs are updated without touching their stock.
+- **Stock valuation** report as at any date, with a tie-out against the Inventory accounts in the ledger.
+- Permissions: `fin.items.view / create / post (adjust stock) / import`.
+
+## Point of sale (`/fin/pos`)
+
+A till for walk-in sales, using finance items and stock.
+
+- **Selling**: search by name or SKU or scan a barcode (the scanner just types into the search box and presses Enter); quantity, line and overall discounts, extra charges (delivery), optional customer (walk-in by default). Keyboard: F2 search, F9 pay, Esc clear. Big touch targets for tablets. The till prices the cart on the server (`/fin/pos/quote`), so the total and change it shows are exactly what will be posted.
+- **Prices include tax** (the tax is split out of the shelf price). A line marked "plus tax" has tax added on top. An overall discount is shared across lines to the pesewa so each line's tax is right.
+- **Payment**: cash, MoMo or card, in any combination (split payments). Cash can be handed over in excess; the change is the excess. MoMo and card pay the exact amount. Each method posts to its own payment account (the till's cash drawer; the MoMo and card accounts set under POS > Settings).
+- **A completed sale** is one transaction: stock out at average cost, and ONE balanced ledger entry (Dr payment accounts; Cr Sales; Cr Tax payable; Dr Cost of goods sold; Cr Inventory). Pressing Pay twice or retrying after a bad connection can never make two sales (client key); two tills racing for the last unit: exactly one wins.
+- **Tills**: named tills, each with its own cash-drawer payment account. A cashier opens a session with a float (optionally moved from a "float source" account such as the safe) and closes it with a **cash count**. Expected cash = float + cash taken (net of change) - cash refunded; the variance is posted to **Cash Over / Short** (a shortage is an expense, an overage a credit). A closed session is final (trigger).
+- **Refunds** from a past receipt (whole or part): reverses sales, tax and cost in proportion (the last unit takes whatever is left), puts stock back at what it cost (or not, for damaged goods), and pays the customer back from the open till or the MoMo/card account.
+- **Receipts**: printable 80 mm layout (print dialog or PDF), a public no-login link `/p/pos/<id>.<HMAC>` and a WhatsApp message.
+- **Reports** (`/fin/pos/reports`): sales by day, cashier, item and payment method, net of refunds, with custom dates and CSV export. Totals tie to the ledger.
+- **Who can do what**: `fin.pos.post` rings up sales; `fin.pos.create` opens and closes a till; `fin.pos.void` does refunds; `fin.pos.approve` is the **supervisor**: a different price, a discount above the limit, a refund above the limit, selling below zero stock, and POS settings. A "POS Cashier" role (view, create, post) is added by the permission sync.
+- Settings and limits: POS > Settings (MoMo and card accounts, float source, discount limit, refund approval limit, receipt header and footer). A chart made before this change needs the account **6730 Cash Over / Short** (role `cash_over_short`) and the number sequences POS_REFUND and POS_SESSION (created automatically).
+- Migrations: `..1000_fin_items_stock`, `..1100_fin_items_stock_triggers`, `..1200_fin_pos`, `..1300_fin_pos_triggers` (each with `down.sql`). Tested on MariaDB 10.11.
+
 ## Rules it enforces
 
 - One posting door: `FinLedgerService.post()`. Balanced inside a database transaction (2+ lines, debits = credits to the pesewa, active posting accounts, open period).

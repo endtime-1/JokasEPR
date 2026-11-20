@@ -76,6 +76,7 @@ const FIN_READ_KEYS = FIN_KEYS.filter((k) => k.endsWith(".view") || k === "fin.r
 // every MANAGER-level role added since).
 const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string, "MANAGER" | "OFFICER"]> = [
   ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations", "OFFICER"],
+  ["POS Cashier", "Rings up walk-in sales on a till in the finance module, and nothing else", "OFFICER"],
   ["Marketer", "Submits a weekly market target for their own assigned market", "OFFICER"],
   ["Egg Sales Officer", "Records direct egg sales from an egg store", "OFFICER"],
   ["Marketing Manager", "Marketing and planning management", "MANAGER"],
@@ -112,6 +113,8 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   "Storekeeper": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "soya.read", "maintenance.read", "reports.export", "ai.read", "alerts.read"],
   "Store Keeper": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "soya.read", "maintenance.read", "reports.export", "ai.read", "alerts.read"],
   "Accountant": ["platform.read", "finance.read", "finance.manage", "feed.read", "soya.read", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read", ...FIN_KEYS],
+  // A cashier can open and close their own till and ring up sales: no ledger, no reports, no settings, no refunds or price changes.
+  "POS Cashier": ["platform.read", "fin.dashboard.view", "fin.pos.view", "fin.pos.create", "fin.pos.post"],
   "Finance Officer": ["platform.read", "finance.read", "finance.manage", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read", ...FIN_KEYS],
   "Sales Officer": ["platform.read", "sales.read", "sales.manage", "inventory.read", "market-planning.read", "reports.export", "ai.read", "alerts.read"],
   "Procurement Officer": ["platform.read", "procurement.read", "procurement.manage", "inventory.read", "reports.export", "ai.read", "alerts.read"],

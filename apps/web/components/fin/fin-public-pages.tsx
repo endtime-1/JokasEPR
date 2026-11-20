@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Download, FileX } from "lucide-react";
 import { API_URL } from "../../lib/api";
+import { ReceiptView } from "./fin-pos-receipt-view";
+import type { Receipt as PosReceiptData } from "./fin-pos-api";
 
 /**
  * The pages a CUSTOMER sees when they open the link from an email or WhatsApp message. No login, no staff menu.
@@ -314,6 +316,25 @@ export function PublicReceiptPage() {
         <a className="app-button-primary" href={`${API_URL}/fin/public/receipts/${encodeURIComponent(token)}/pdf`} target="_blank" rel="noopener noreferrer"><Download className="h-4 w-4" aria-hidden /> Download PDF</a>
       </div>
     </Shell>
+  );
+}
+
+/** A till receipt opened from the WhatsApp link: the same receipt, with a PDF. No login. */
+export function PublicPosReceiptPage() {
+  const { token } = useParams<{ token: string }>();
+  const { data, state } = usePublic<PosReceiptData>(`/fin/public/pos-receipts/${encodeURIComponent(token)}`);
+  if (state === "loading") return <Shell><div className="py-20 text-center text-sm text-ink/50">Loading…</div></Shell>;
+  if (state !== "ok" || !data) return <Missing error={state === "error"} />;
+  return (
+    <div className="min-h-screen bg-canvas px-4 py-8 text-ink">
+      <div className="mx-auto max-w-sm">
+        <div className="app-card p-3"><ReceiptView r={data} /></div>
+        <div className="mt-4 flex justify-center gap-2 print:hidden">
+          <button className="app-button-secondary" onClick={() => window.print()}>Print</button>
+          <a className="app-button-primary" href={`${API_URL}/fin/public/pos-receipts/${encodeURIComponent(token)}/pdf`} target="_blank" rel="noopener noreferrer"><Download className="h-4 w-4" aria-hidden /> Download PDF</a>
+        </div>
+      </div>
+    </div>
   );
 }
 

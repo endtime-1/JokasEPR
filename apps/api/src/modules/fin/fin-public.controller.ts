@@ -3,6 +3,7 @@ import { Throttle } from "@nestjs/throttler";
 import { Public } from "../../common/decorators/public.decorator";
 import { CreateCheckoutDto } from "./dto/fin-banking.dto";
 import { FinOnlinePaymentsService } from "./fin-online-payments.service";
+import { FinPosReceiptService } from "./fin-pos-receipt.service";
 import { FinSalesShareService } from "./fin-sales-share.service";
 
 /**
@@ -14,7 +15,7 @@ import { FinSalesShareService } from "./fin-sales-share.service";
 @Controller("fin/public")
 @Throttle({ default: { limit: 30, ttl: 60_000 } })
 export class FinPublicController {
-  constructor(private readonly share: FinSalesShareService, private readonly online: FinOnlinePaymentsService) {}
+  constructor(private readonly share: FinSalesShareService, private readonly online: FinOnlinePaymentsService, private readonly posReceipts: FinPosReceiptService) {}
 
   @Get("invoices/:token")
   @Header("Cache-Control", "no-store")
@@ -61,6 +62,19 @@ export class FinPublicController {
   @Header("Cache-Control", "no-store")
   async receiptPdf(@Param("token") token: string) {
     const r = await this.share.publicReceiptPdf(token);
+    return new StreamableFile(r.buffer, { type: "application/pdf", disposition: `inline; filename="${r.filename.replace(/[^A-Za-z0-9._-]/g, "_")}"` });
+  }
+
+  @Get("pos-receipts/:token")
+  @Header("Cache-Control", "no-store")
+  async posReceipt(@Param("token") token: string) {
+    return { data: await this.posReceipts.publicReceipt(token) };
+  }
+
+  @Get("pos-receipts/:token/pdf")
+  @Header("Cache-Control", "no-store")
+  async posReceiptPdf(@Param("token") token: string) {
+    const r = await this.posReceipts.publicPdf(token);
     return new StreamableFile(r.buffer, { type: "application/pdf", disposition: `inline; filename="${r.filename.replace(/[^A-Za-z0-9._-]/g, "_")}"` });
   }
 

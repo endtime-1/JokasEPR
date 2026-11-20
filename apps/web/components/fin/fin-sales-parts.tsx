@@ -18,7 +18,8 @@ const TABS = [
   { href: "/fin/sales/deposits", label: "Deposits" },
   { href: "/fin/sales/credit-notes", label: "Credit notes" },
   { href: "/fin/sales/recurring", label: "Recurring" },
-  { href: "/fin/sales/statements", label: "Statements" }
+  { href: "/fin/sales/statements", label: "Statements" },
+  { href: "/fin/sales/incoming", label: "From other modules" }
 ];
 
 /** The strip of links across the top of every sales screen. */

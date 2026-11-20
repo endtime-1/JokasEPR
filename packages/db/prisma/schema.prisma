@@ -7783,7 +7783,6 @@ model RefSequence {
   @@unique([companyId, prefix, year])
   @@index([companyId])
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Finance v2 ("fin"): self-contained books. Every table is prefixed fin_ and has
 // NO foreign key into any ERP table. companyId / user ids are plain values.
@@ -8198,6 +8197,10 @@ model FinInvoice {
   voidedAt         DateTime?
   voidReason       String?          @db.VarChar(300)
   journalEntryId   String?          @db.VarChar(36)
+  // Set when a draft was created from another module ("SO:<order id>"). Unique per company, so one source can only ever create one invoice.
+  externalRef      String?          @db.VarChar(100)
+  sourceLabel      String?          @db.VarChar(120)
+  sourceTotal      Decimal?         @db.Decimal(15, 2)
   // The public link is derived (HMAC), never stored. Bumping linkVersion or switching it off revokes old links.
   linkVersion      Int              @default(1)
   linkEnabled      Boolean          @default(true)
@@ -8214,6 +8217,7 @@ model FinInvoice {
 
   @@unique([companyId, number])
   @@unique([recurringId, recurringRunDate])
+  @@unique([companyId, externalRef])
   @@index([companyId, status])
   @@index([companyId, contactId])
   @@index([companyId, issueDate])
@@ -8637,4 +8641,358 @@ model FinReconLock {
 
   @@index([companyId, paymentAccountId, createdAt])
   @@map("fin_recon_locks")
+}
+
+// ─── Links to other modules (finance pulls; nothing in the other modules changes) ───
+enum FinIntegrationLogStatus {
+  CREATED
+  NEEDS_MAPPING
+  ERROR
+  SOURCE_CANCELLED
+}
+
+// One row per link per company. Every link is OFF until someone switches it on; enabledAt is the start line:
+// only source records confirmed after it are ever imported.
+model FinIntegrationSetting {
+  id                 String    @id @default(uuid())
+  companyId          String
+  linkKey            String    @db.VarChar(40)
+  enabled            Boolean   @default(false)
+  enabledAt          DateTime?
+  defaultTaxCodeId   String?   @db.VarChar(36)
+  defaultAccountId   String?   @db.VarChar(36)
+  autoCreateContacts Boolean   @default(false)
+  lastRunAt          DateTime?
+  lastRunSummary     String?   @db.VarChar(300)
+  updatedById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([companyId, linkKey])
+  @@map("fin_integration_settings")
+}
+
+// One row per source record (an order). Updated as its state changes; the finance draft it created is linked by invoiceId.
+model FinIntegrationLog {
+  id                 String                  @id @default(uuid())
+  companyId          String
+  linkKey            String                  @db.VarChar(40)
+  sourceId           String                  @db.VarChar(64)
+  sourceLabel        String?                 @db.VarChar(120)
+  sourceCustomerId   String?                 @db.VarChar(64)
+  sourceCustomerName String?                 @db.VarChar(200)
+  status             FinIntegrationLogStatus
+  message            String?                 @db.VarChar(500)
+  invoiceId          String?                 @db.VarChar(36)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@unique([companyId, linkKey, sourceId])
+  @@index([companyId, linkKey, status])
+  @@map("fin_integration_log")
+}
+
+// ─── Items and stock (weighted-average cost, append-only movements) ───
+enum FinItemKind {
+  GOODS
+  SERVICE
+}
+
+enum FinStockMoveType {
+  OPENING
+  ADJUSTMENT
+  SALE
+  SALE_RETURN
+  PURCHASE
+  PURCHASE_RETURN
+}
+
+model FinItem {
+  id                 String      @id @default(uuid())
+  companyId          String
+  sku                String      @db.VarChar(60)
+  name               String      @db.VarChar(200)
+  barcode            String?     @db.VarChar(80)
+  kind               FinItemKind @default(GOODS)
+  unit               String      @default("each") @db.VarChar(20)
+  category           String?     @db.VarChar(80)
+  // The shelf price. Retail prices include tax by default; the tax is split out when the item is sold.
+  sellPrice          Decimal     @default(0) @db.Decimal(15, 2)
+  priceIncludesTax   Boolean     @default(true)
+  taxCodeId          String?     @db.VarChar(36)
+  incomeAccountId    String?     @db.VarChar(36)
+  cogsAccountId      String?     @db.VarChar(36)
+  inventoryAccountId String?     @db.VarChar(36)
+  trackStock         Boolean     @default(true)
+  reorderLevel       Decimal     @default(0) @db.Decimal(15, 3)
+  // Running totals, kept in step with fin_stock_movements inside the same transaction as every movement.
+  qtyOnHand          Decimal     @default(0) @db.Decimal(15, 3)
+  stockValue         Decimal     @default(0) @db.Decimal(15, 2)
+  isActive           Boolean     @default(true)
+  notes              String?     @db.VarChar(500)
+  externalRef        String?     @db.VarChar(100)
+  createdById        String?
+  updatedById        String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  movements FinStockMovement[]
+
+  @@unique([companyId, sku])
+  @@unique([companyId, barcode])
+  @@index([companyId, name])
+  @@index([companyId, isActive])
+  @@map("fin_items")
+}
+
+// Every change to stock is one row here, never edited or deleted. Quantities are signed (out is negative).
+model FinStockMovement {
+  id             String           @id @default(uuid())
+  companyId      String
+  itemId         String
+  movementDate   DateTime         @db.Date
+  type           FinStockMoveType
+  quantity       Decimal          @db.Decimal(15, 3)
+  unitCost       Decimal          @default(0) @db.Decimal(15, 4)
+  value          Decimal          @default(0) @db.Decimal(15, 2)
+  balanceQty     Decimal          @db.Decimal(15, 3)
+  balanceValue   Decimal          @db.Decimal(15, 2)
+  sourceModule   String           @db.VarChar(40)
+  sourceId       String           @db.VarChar(80)
+  journalEntryId String?          @db.VarChar(36)
+  reference      String?          @db.VarChar(100)
+  notes          String?          @db.VarChar(300)
+  createdById    String?
+  createdAt      DateTime         @default(now())
+
+  item FinItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  // One business event, one movement: a retry can never take stock out twice.
+  @@unique([companyId, sourceModule, sourceId])
+  @@index([companyId, itemId, movementDate])
+  @@map("fin_stock_movements")
+}
+
+// ─── Point of sale: tills, sales, payments, refunds ───
+enum FinPosSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum FinPosPayMethod {
+  CASH
+  MOMO
+  CARD
+}
+
+// One row per company: which payment accounts the till uses, and the limits that need a supervisor.
+model FinPosSettings {
+  id                       String   @id @default(uuid())
+  companyId                String   @unique
+  momoPaymentAccountId     String?  @db.VarChar(36)
+  cardPaymentAccountId     String?  @db.VarChar(36)
+  // Where a till's opening float comes from (for example the office safe). Blank = the float is already in the drawer.
+  floatSourceAccountId     String?  @db.VarChar(36)
+  // A discount above this % of a sale needs a supervisor.
+  maxDiscountPercent       Decimal  @default(10) @db.Decimal(5, 2)
+  // A refund above this amount needs a supervisor. Blank = every refund needs one.
+  refundApprovalAbove      Decimal? @db.Decimal(15, 2)
+  receiptHeader            String?  @db.VarChar(300)
+  receiptFooter            String?  @db.VarChar(300)
+  updatedById              String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@map("fin_pos_settings")
+}
+
+// A named till (Till 1, Counter 2). Its cash drawer is one of the finance payment accounts.
+model FinPosRegister {
+  id               String   @id @default(uuid())
+  companyId        String
+  name             String   @db.VarChar(80)
+  cashAccountId    String   @db.VarChar(36)
+  isActive         Boolean  @default(true)
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sessions FinPosSession[]
+
+  @@unique([companyId, name])
+  @@map("fin_pos_registers")
+}
+
+// A cashier's shift on a till: opened with a float, closed with a cash count.
+model FinPosSession {
+  id              String              @id @default(uuid())
+  companyId       String
+  registerId      String
+  number          String              @db.VarChar(40)
+  cashierId       String              @db.VarChar(64)
+  cashierName     String              @db.VarChar(160)
+  status          FinPosSessionStatus @default(OPEN)
+  openedAt        DateTime            @default(now())
+  openingFloat    Decimal             @default(0) @db.Decimal(15, 2)
+  closedAt        DateTime?
+  closedById      String?             @db.VarChar(64)
+  expectedCash    Decimal?            @db.Decimal(15, 2)
+  countedCash     Decimal?            @db.Decimal(15, 2)
+  variance        Decimal?            @db.Decimal(15, 2)
+  closeNote       String?             @db.VarChar(300)
+  floatTransferId String?             @db.VarChar(36)
+  varianceEntryId String?             @db.VarChar(36)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  register FinPosRegister @relation(fields: [registerId], references: [id], onDelete: Restrict)
+  sales    FinPosSale[]
+  refunds  FinPosRefund[]
+
+  @@unique([companyId, number])
+  @@index([companyId, registerId, status])
+  @@index([companyId, openedAt])
+  @@map("fin_pos_sessions")
+}
+
+model FinPosSale {
+  id             String   @id @default(uuid())
+  companyId      String
+  number         String   @db.VarChar(40)
+  sessionId      String
+  registerId     String   @db.VarChar(36)
+  cashierId      String   @db.VarChar(64)
+  cashierName    String   @db.VarChar(160)
+  contactId      String?  @db.VarChar(36)
+  customerName   String?  @db.VarChar(160)
+  saleDate       DateTime @db.Date
+  subtotal       Decimal  @default(0) @db.Decimal(15, 2)
+  discountTotal  Decimal  @default(0) @db.Decimal(15, 2)
+  taxTotal       Decimal  @default(0) @db.Decimal(15, 2)
+  total          Decimal  @default(0) @db.Decimal(15, 2)
+  tendered       Decimal  @default(0) @db.Decimal(15, 2)
+  changeGiven    Decimal  @default(0) @db.Decimal(15, 2)
+  costTotal      Decimal  @default(0) @db.Decimal(15, 2)
+  clientKey      String   @db.VarChar(80)
+  journalEntryId String?  @db.VarChar(36)
+  notes          String?  @db.VarChar(300)
+  createdAt      DateTime @default(now())
+
+  session  FinPosSession    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  lines    FinPosSaleLine[]
+  payments FinPosPayment[]
+  refunds  FinPosRefund[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, clientKey])
+  @@index([companyId, saleDate])
+  @@index([sessionId])
+  @@map("fin_pos_sales")
+}
+
+model FinPosSaleLine {
+  id               String  @id @default(uuid())
+  saleId           String
+  lineNo           Int
+  itemId           String? @db.VarChar(36)
+  description      String  @db.VarChar(300)
+  quantity         Decimal @db.Decimal(15, 3)
+  unitPrice        Decimal @db.Decimal(15, 2)
+  priceIncludesTax Boolean @default(true)
+  discountAmount   Decimal @default(0) @db.Decimal(15, 2)
+  taxCodeId        String? @db.VarChar(36)
+  taxRatePercent   Decimal @default(0) @db.Decimal(7, 4)
+  lineNet          Decimal @db.Decimal(15, 2)
+  lineTax          Decimal @default(0) @db.Decimal(15, 2)
+  lineTotal        Decimal @db.Decimal(15, 2)
+  cost             Decimal @default(0) @db.Decimal(15, 2)
+  incomeAccountId  String? @db.VarChar(36)
+  isCharge         Boolean @default(false)
+  movementId       String? @db.VarChar(36)
+
+  sale        FinPosSale         @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  refundLines FinPosRefundLine[]
+
+  @@index([saleId])
+  @@map("fin_pos_sale_lines")
+}
+
+model FinPosPayment {
+  id               String          @id @default(uuid())
+  saleId           String
+  method           FinPosPayMethod
+  paymentAccountId String          @db.VarChar(36)
+  amount           Decimal         @db.Decimal(15, 2)
+  tendered         Decimal         @db.Decimal(15, 2)
+  reference        String?         @db.VarChar(100)
+
+  sale FinPosSale @relation(fields: [saleId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@map("fin_pos_payments")
+}
+
+model FinPosRefund {
+  id             String   @id @default(uuid())
+  companyId      String
+  number         String   @db.VarChar(40)
+  saleId         String
+  sessionId      String
+  cashierId      String   @db.VarChar(64)
+  cashierName    String   @db.VarChar(160)
+  approvedById   String?  @db.VarChar(64)
+  refundDate     DateTime @db.Date
+  reason         String   @db.VarChar(300)
+  restock        Boolean  @default(true)
+  netTotal       Decimal  @db.Decimal(15, 2)
+  taxTotal       Decimal  @default(0) @db.Decimal(15, 2)
+  total          Decimal  @db.Decimal(15, 2)
+  costReturned   Decimal  @default(0) @db.Decimal(15, 2)
+  clientKey      String   @db.VarChar(80)
+  journalEntryId String?  @db.VarChar(36)
+  createdAt      DateTime @default(now())
+
+  sale     FinPosSale            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  session  FinPosSession         @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  lines    FinPosRefundLine[]
+  payments FinPosRefundPayment[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, clientKey])
+  @@index([companyId, refundDate])
+  @@index([saleId])
+  @@map("fin_pos_refunds")
+}
+
+model FinPosRefundLine {
+  id           String  @id @default(uuid())
+  refundId     String
+  saleLineId   String
+  quantity     Decimal @db.Decimal(15, 3)
+  net          Decimal @db.Decimal(15, 2)
+  tax          Decimal @default(0) @db.Decimal(15, 2)
+  total        Decimal @db.Decimal(15, 2)
+  costReturned Decimal @default(0) @db.Decimal(15, 2)
+  movementId   String? @db.VarChar(36)
+
+  refund   FinPosRefund   @relation(fields: [refundId], references: [id], onDelete: Restrict)
+  saleLine FinPosSaleLine @relation(fields: [saleLineId], references: [id], onDelete: Restrict)
+
+  @@index([refundId])
+  @@index([saleLineId])
+  @@map("fin_pos_refund_lines")
+}
+
+model FinPosRefundPayment {
+  id               String          @id @default(uuid())
+  refundId         String
+  method           FinPosPayMethod
+  paymentAccountId String          @db.VarChar(36)
+  amount           Decimal         @db.Decimal(15, 2)
+  reference        String?         @db.VarChar(100)
+
+  refund FinPosRefund @relation(fields: [refundId], references: [id], onDelete: Restrict)
+
+  @@index([refundId])
+  @@map("fin_pos_refund_payments")
 }

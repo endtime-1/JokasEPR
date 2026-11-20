@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   BookOpen,
   BookUser,
+  Boxes,
   Calculator,
   ChartBar,
   ChevronDown,
@@ -50,7 +51,8 @@ const NAV: NavItem[] = [
       { href: "/fin/sales/deposits", label: "Deposits" },
       { href: "/fin/sales/credit-notes", label: "Credit Notes" },
       { href: "/fin/sales/recurring", label: "Recurring" },
-      { href: "/fin/sales/statements", label: "Statements" }
+      { href: "/fin/sales/statements", label: "Statements" },
+      { href: "/fin/sales/incoming", label: "From other modules" }
     ]
   },
   { href: "/fin/purchases", label: "Purchases", icon: ShoppingCart, permission: "fin.purchases.view" },
@@ -68,7 +70,29 @@ const NAV: NavItem[] = [
       { href: "/fin/banking/reconcile", label: "Reconcile" }
     ]
   },
-  { href: "/fin/pos", label: "POS", icon: Store, permission: "fin.pos.view" },
+  {
+    href: "/fin/items",
+    label: "Items & Stock",
+    icon: Boxes,
+    permission: "fin.items.view",
+    children: [
+      { href: "/fin/items", label: "Items" },
+      { href: "/fin/items/valuation", label: "Stock valuation" }
+    ]
+  },
+  {
+    href: "/fin/pos",
+    label: "POS",
+    icon: Store,
+    permission: "fin.pos.view",
+    children: [
+      { href: "/fin/pos", label: "Till" },
+      { href: "/fin/pos/sales", label: "Receipts" },
+      { href: "/fin/pos/tills", label: "Till sessions" },
+      { href: "/fin/pos/reports", label: "Reports" },
+      { href: "/fin/pos/settings", label: "Settings" }
+    ]
+  },
   { href: "/fin/payroll", label: "Payroll", icon: Users, permission: "fin.payroll.view" },
   {
     href: "/fin/accounting",
@@ -91,6 +115,7 @@ const NAV: NavItem[] = [
     children: [
       { href: "/fin/settings", label: "Business & Numbering" },
       { href: "/fin/settings/tax", label: "Tax" },
+      { href: "/fin/settings/integrations", label: "Integrations" },
       { href: "/fin/settings/audit-log", label: "Audit Log" }
     ]
   }

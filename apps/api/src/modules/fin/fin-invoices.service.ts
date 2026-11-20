@@ -91,7 +91,7 @@ export class FinInvoicesService {
 
   // ─── drafts ─────────────────────────────────────────────────────────────────
 
-  async createDraft(companyId: string, userId: string, dto: CreateInvoiceDto, meta: RequestMeta, extra: { quoteId?: string; recurringId?: string; recurringRunDate?: Date } = {}, db?: FinDb): Promise<Awaited<ReturnType<FinInvoicesService["get"]>>> {
+  async createDraft(companyId: string, userId: string, dto: CreateInvoiceDto, meta: RequestMeta, extra: { quoteId?: string; recurringId?: string; recurringRunDate?: Date; externalRef?: string; sourceLabel?: string; sourceTotal?: string } = {}, db?: FinDb): Promise<Awaited<ReturnType<FinInvoicesService["get"]>>> {
     if (!db) return this.prisma.$transaction((tx) => this.createDraft(companyId, userId, dto, meta, extra, tx));
     const contact = await this.requireCustomer(db, companyId, dto.contactId);
     const issueDate = parseDay(dto.issueDate);
@@ -115,6 +115,9 @@ export class FinInvoicesService {
         quoteId: extra.quoteId ?? null,
         recurringId: extra.recurringId ?? null,
         recurringRunDate: extra.recurringRunDate ?? null,
+        externalRef: extra.externalRef ?? null,
+        sourceLabel: extra.sourceLabel ?? null,
+        sourceTotal: extra.sourceTotal ?? null,
         createdById: userId,
         lines: { create: lineRows(lines) }
       },
@@ -321,6 +324,9 @@ export function presentHeader(inv: HeaderRow) {
     journalEntryId: inv.journalEntryId,
     linkEnabled: inv.linkEnabled,
     linkVersion: inv.linkVersion,
+    externalRef: inv.externalRef,
+    sourceLabel: inv.sourceLabel,
+    sourceTotal: inv.sourceTotal === null ? null : money(inv.sourceTotal),
     createdAt: inv.createdAt
   };
 }
