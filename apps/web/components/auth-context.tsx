@@ -90,7 +90,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Refresh token genuinely invalid — session is over, go to login.
             // Guard: skip the redirect when already on /login so we don't reset
             // the form (and avoid a potential re-render loop on the same route).
-            if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+            // Also skip it on /p/ pages: those are public customer links (an invoice or statement
+            // opened from an email or WhatsApp message), and a visitor there has no session by design.
+            if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login") && !window.location.pathname.startsWith("/p/")) {
               router.replace("/login");
             }
             return;
@@ -160,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async function runRefresh() {
       lastRun = Date.now();
       const result = await refreshSession();
-      if (result === "expired") {
+      if (result === "expired" && !window.location.pathname.startsWith("/p/")) {
         router.replace("/login");
       }
       // "unreachable" is fine — the reactive 401 handling in apiFetch will catch it

@@ -16,6 +16,7 @@ import {
   Bot,
   Briefcase,
   Building2,
+  Calculator,
   ChevronRight,
   ClipboardList,
   Egg,
@@ -85,6 +86,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { href: "/egg-sales", label: "Egg Sales", icon: Egg, permission: "egg-sales.read" },
       { href: "/storefront", label: "Storefront", icon: Globe, permission: "sales.read" },
       { href: "/finance", label: "Finance", icon: Wallet, permission: "finance.read" },
+      { href: "/fin", label: "Finance (New)", icon: Calculator, permission: "fin.dashboard.view" },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart, permission: "procurement.read" },
       { href: "/quickbooks", label: "QuickBooks", icon: BookOpen, permission: "quickbooks.read" }
     ]

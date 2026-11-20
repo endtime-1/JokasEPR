@@ -16,7 +16,8 @@ import { PrismaService } from "./modules/prisma/prisma.service";
 
 async function bootstrap() {
   process.stderr.write("[api] bootstrap() starting\n");
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false });
+  // rawBody keeps the exact bytes of each request body on req.rawBody. The payment provider's webhook signature is computed over those bytes.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false, rawBody: true });
   const config = app.get(ConfigService);
   const prisma = app.get(PrismaService);
   const port = config.get<number>("API_PORT", 4001);
@@ -35,6 +36,9 @@ async function bootstrap() {
       res.status(503).send("db_unavailable");
     }
   });
+
+  // The finance CSV imports send the whole file as JSON text (up to ~2 MB for 5,000 rows); the default 100 KB limit is too small.
+  app.useBodyParser("json", { limit: "3mb" });
 
   app.setGlobalPrefix(prefix);
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: version });
