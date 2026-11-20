@@ -76,7 +76,6 @@ const FIN_READ_KEYS = FIN_KEYS.filter((k) => k.endsWith(".view") || k === "fin.r
 // every MANAGER-level role added since).
 const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string, "MANAGER" | "OFFICER"]> = [
   ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations", "OFFICER"],
-  ["POS Cashier", "Rings up walk-in sales on a till in the finance module, and nothing else", "OFFICER"],
   ["Marketer", "Submits a weekly market target for their own assigned market", "OFFICER"],
   ["Egg Sales Officer", "Records direct egg sales from an egg store", "OFFICER"],
   ["Marketing Manager", "Marketing and planning management", "MANAGER"],
@@ -86,6 +85,7 @@ const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string, "MANAGER" | "
   ["Maintenance Officer", "Machine and maintenance operations", "OFFICER"],
   ["Quality Officer", "Quality control operations", "OFFICER"],
   ["Vet/Health Officer", "Veterinary and flock health operations", "OFFICER"],
+  ["POS Cashier", "Rings up walk-in sales on a till in the finance module, and nothing else", "OFFICER"],
 ];
 
 const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
