@@ -16,6 +16,7 @@ import {
   Bot,
   Briefcase,
   Building2,
+  Calculator,
   ChevronRight,
   ClipboardList,
   Egg,
@@ -30,6 +31,7 @@ import {
   Menu,
   PackageSearch,
   QrCode,
+  ScanLine,
   ReceiptText,
   Search,
   Settings,
@@ -75,7 +77,8 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { href: "/inventory", label: "Inventory", icon: PackageSearch, permission: "inventory.read" },
       { href: "/qr-labels", label: "QR Labels", icon: QrCode, permission: "inventory.read" },
       { href: "/maintenance", label: "Maintenance", icon: Wrench, permission: "maintenance.read" },
-      { href: "/quality", label: "Quality", icon: FlaskConical, permission: "quality.read" }
+      { href: "/quality", label: "Quality", icon: FlaskConical, permission: "quality.read" },
+      { href: "/hr/attendance/scan", label: "Attendance Scanner", icon: ScanLine, permission: "hr.attendance.scan" }
     ]
   },
   {
@@ -85,6 +88,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { href: "/egg-sales", label: "Egg Sales", icon: Egg, permission: "egg-sales.read" },
       { href: "/storefront", label: "Storefront", icon: Globe, permission: "sales.read" },
       { href: "/finance", label: "Finance", icon: Wallet, permission: "finance.read" },
+      { href: "/fin", label: "Finance (New)", icon: Calculator, permission: "fin.dashboard.view" },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart, permission: "procurement.read" },
       { href: "/quickbooks", label: "QuickBooks", icon: BookOpen, permission: "quickbooks.read" }
     ]

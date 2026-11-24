@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowLeftRight, BellRing, Bird, Boxes, ChartBar, CircleCheckBig, ClipboardList, Factory, FileDown, FileText,
+  ArrowLeftRight, BellRing, Bird, BookOpen, Boxes, ChartBar, CircleCheckBig, ClipboardList, Factory, FileDown, FileText,
   FlaskConical, HeartPulse, LayoutDashboard, MapPinned, PackageSearch, Receipt, ShoppingBag, ShoppingCart, Sprout, Store,
   Target, Truck, Users, Bot, Wallet, Wrench, Cpu, CalendarClock
 } from "lucide-react";
@@ -28,7 +28,7 @@ export const POULTRY_GROUPS: ModuleNavGroup[] = [
 
 export const INVENTORY_GROUPS: ModuleNavGroup[] = [
   { label: "Overview", icon: LayoutDashboard, items: [
-    { href: "/inventory", label: "Dashboard", exact: true }, { href: "/inventory/items", label: "Items" }, { href: "/inventory/movements", label: "Movements" } ] },
+    { href: "/inventory", label: "Dashboard", exact: true }, { href: "/inventory/items", label: "Items" }, { href: "/inventory/movements", label: "Movements" }, { href: "/inventory/stock-ledger", label: "Stock ledger" } ] },
   { label: "Operations", icon: ArrowLeftRight, items: [
     { href: "/inventory/stock-in", label: "Stock in" }, { href: "/inventory/stock-out", label: "Stock out" },
     { href: "/inventory/transfers", label: "Transfers" }, { href: "/inventory/adjustments", label: "Adjustments" } ] },
@@ -72,6 +72,12 @@ export const MARKET_PLANNING_GROUPS: ModuleNavGroup[] = [
   { label: "Overview", icon: LayoutDashboard, items: [
     { href: "/market-planning", label: "Dashboard", exact: true }, { href: "/market-planning/targets", label: "Targets" },
     { href: "/market-planning/markets", label: "Markets" } ] },
+  // Each marketer's weekly customer plan against the sales actually made. The weekly tab also
+  // covers a plan's own page and the plan form, which live under /ledger/.
+  { label: "Marketing ledger", icon: BookOpen, items: [
+    { href: "/market-planning/ledger", label: "Weekly ledger",
+      isActive: (p) => p === "/market-planning/ledger" || (p.startsWith("/market-planning/ledger/") && !p.startsWith("/market-planning/ledger/scorecard")) },
+    { href: "/market-planning/ledger/scorecard", label: "Scorecard" } ] },
   { label: "Planning", icon: Target, items: [
     { href: "/market-planning/production-plans", label: "Production plans" }, { href: "/market-planning/mrp", label: "MRP" },
     { href: "/market-planning/availability", label: "Availability" } ] },

@@ -6,8 +6,9 @@ import { FileBarChart, Loader2, RefreshCw } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "./ui";
 import { ApiEnvelope, apiFetch } from "../lib/api";
+import { toBags } from "../lib/units";
 
-type Kpi = { label: string; value: string; tone?: "good" | "warning" | "critical" | "neutral" };
+type Kpi = { label: string; value: string; sub?: string; tone?: "good" | "warning" | "critical" | "neutral" };
 type ChartCfg = { title: string; kind: "line" | "bar"; xKey: string; series: { key: string; name: string; color?: string }[]; data: (d: any) => Record<string, string | number>[] };
 type ModuleCfg = {
   title: string;
@@ -19,6 +20,11 @@ type ModuleCfg = {
 
 const N = (v: unknown, dp = 0) => new Intl.NumberFormat("en-GH", { maximumFractionDigits: dp }).format(Number(v ?? 0));
 const GHS = (v: unknown) => `GHS ${N(v)}`;
+// A weight shown the way the business counts it: 50 kg bags first, the kilograms underneath.
+const BAGS = (label: string, kg: unknown, tone?: Kpi["tone"]): Kpi => {
+  const b = toBags(Number(kg ?? 0));
+  return { label, value: b.main + " " + b.mainUnit, sub: b.under, tone };
+};
 
 const CONFIG: Record<string, ModuleCfg> = {
   feed: {
@@ -26,11 +32,11 @@ const CONFIG: Record<string, ModuleCfg> = {
     endpoint: "/feed-production/dashboard",
     reportModule: "feed",
     kpis: (d) => [
-      { label: "Produced (recent)", value: `${N(d.totalProducedKg)} kg` },
+      BAGS("Produced (recent)", d.totalProducedKg),
       { label: "Finished stock", value: `${N(d.bag50KgCount)} bags` },
       { label: "Open orders", value: N(d.openOrders), tone: d.openOrders > 0 ? "warning" : "neutral" },
       { label: "Pending QC", value: N(d.pendingQualityChecks), tone: d.pendingQualityChecks > 0 ? "warning" : "good" },
-      { label: "Wastage", value: `${N(d.wastageKg)} kg` },
+      BAGS("Wastage", d.wastageKg),
       { label: "Margin", value: `${d.productionProfitMargin ?? 0}%`, tone: "neutral" },
     ],
     charts: [
@@ -48,11 +54,11 @@ const CONFIG: Record<string, ModuleCfg> = {
     endpoint: "/soya-processing/dashboard",
     reportModule: "soya",
     kpis: (d) => [
-      { label: "Beans received", value: `${N(d.beansReceivedKg)} kg` },
+      BAGS("Beans received", d.beansReceivedKg),
       { label: "Oil produced", value: `${N(d.oilProducedLitres)} L` },
-      { label: "Cake produced", value: `${N(d.cakeProducedKg)} kg` },
+      BAGS("Cake produced", d.cakeProducedKg),
       { label: "Oil yield", value: `${d.oilYieldPct ?? 0}%` },
-      { label: "Waste", value: `${N(d.wasteKg)} kg`, tone: "neutral" },
+      BAGS("Waste", d.wasteKg, "neutral"),
       { label: "Pending QC", value: N(d.pendingQualityChecks), tone: d.pendingQualityChecks > 0 ? "warning" : "good" },
     ],
     charts: [
@@ -141,6 +147,7 @@ export function ModuleExecutivePage({ module }: { module: keyof typeof CONFIG })
                 <div className={`text-lg font-extrabold leading-tight ${
                   k.tone === "critical" ? "text-red-600" : k.tone === "warning" ? "text-amber-700" : k.tone === "good" ? "text-emerald-700" : "text-ink"
                 }`}>{k.value}</div>
+                {k.sub && <div className="mt-0.5 text-[11px] text-ink/40">{k.sub}</div>}
               </div>
             ))}
           </div>

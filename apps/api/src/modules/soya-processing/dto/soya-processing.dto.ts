@@ -121,6 +121,13 @@ export class CreateSoyaProcessingBatchDto {
   @IsUUID()
   intakeId?: string;
 
+  // Stock lot to draw from when the beans have no intake record (e.g. beans moved in by a
+  // stock transfer). Ignored when intakeId is given.
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  beanLotNumber?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(80)

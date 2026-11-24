@@ -1,7 +1,8 @@
 import type { Config } from "jest";
 
 const config: Config = {
-  moduleFileExtensions: ["js", "json", "ts"],
+  // "ts" first: packages/shared/src also holds stale committed .js builds that would otherwise shadow the real sources.
+  moduleFileExtensions: ["ts", "js", "json"],
   rootDir: ".",
   testRegex: ".*\\.spec\\.ts$",
   transform: {

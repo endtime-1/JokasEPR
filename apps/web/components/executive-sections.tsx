@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowRight, Bird, Boxes, Factory, ShoppingCart, Wheat, type LucideIcon } from "lucide-react";
+import { toBags, toCrates } from "../lib/units";
 
 type SectionCard = {
   key: string;
@@ -22,10 +23,8 @@ export type DashboardSection = {
 
 const ICONS: Record<string, LucideIcon> = { bird: Bird, wheat: Wheat, factory: Factory, cart: ShoppingCart, boxes: Boxes };
 
-// Matches EGG_PIECES_PER_CRATE in apps/api's poultry.service.ts — every
-// Egg production card here is in raw pieces, but eggs are tracked/sold as
-// crates everywhere else in the app. Owner request (2026-09-14): show both.
-const EGGS_PER_CRATE = 30;
+// Owner request (2026-11-11): the business works in crates and bags, so those are the big figure on
+// every card and the raw pieces / kilos sit underneath (1 crate = 30 eggs, 1 bag = 50 kg; see lib/units).
 
 const TONE: Record<SectionCard["tone"], { wrap: string; val: string; dot: string }> = {
   critical: { wrap: "from-red-50 border-red-200", val: "text-red-700", dot: "bg-red-400" },
@@ -42,6 +41,10 @@ function fmt(value: number, unit?: string): string {
 
 function MetricCard({ card }: { card: SectionCard }) {
   const t = TONE[card.tone];
+  // Eggs -> crates, kg -> bags (headline); the original pieces / kilos go underneath.
+  const conv = card.unit === "eggs" ? toCrates(card.value) : card.unit === "kg" ? toBags(card.value) : null;
+  // A "N bags" note on a kg card would just repeat the headline.
+  const sub = card.sub && !(conv && /bags?$/i.test(card.sub.trim())) ? card.sub : undefined;
   return (
     <Link
       href={card.href}
@@ -50,7 +53,7 @@ function MetricCard({ card }: { card: SectionCard }) {
       <div className="flex items-start justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase leading-snug tracking-wide text-ink/50">
           {card.label}
-          {card.sub && <span className="ml-1 inline-block rounded bg-field px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal text-ink/45">{card.sub}</span>}
+          {sub && <span className="ml-1 inline-block rounded bg-field px-1.5 py-0.5 text-[9px] font-bold normal-case tracking-normal text-ink/45">{sub}</span>}
         </p>
         <span className="mt-0.5 flex shrink-0 items-center gap-1.5">
           <span className={`h-2 w-2 rounded-full ${t.dot} opacity-70`} />
@@ -58,13 +61,13 @@ function MetricCard({ card }: { card: SectionCard }) {
         </span>
       </div>
       <strong className={`mt-3 block font-display tabular-nums text-[22px] font-extrabold leading-none tracking-tight ${t.val}`}>
-        {fmt(card.value, card.unit)}
-        {card.unit && card.unit !== "GHS" && <span className="ml-1 text-xs font-bold text-ink/40">{card.unit}</span>}
+        {conv ? conv.main : fmt(card.value, card.unit)}
+        {conv
+          ? <span className="ml-1 text-xs font-bold text-ink/40">{conv.mainUnit}</span>
+          : card.unit && card.unit !== "GHS" && <span className="ml-1 text-xs font-bold text-ink/40">{card.unit}</span>}
       </strong>
-      {card.unit === "eggs" && card.value > 0 && (
-        <span className="mt-1 block text-[11px] font-semibold text-ink/40">
-          {(card.value / EGGS_PER_CRATE).toLocaleString(undefined, { maximumFractionDigits: 1 })} crates
-        </span>
+      {conv && card.value > 0 && (
+        <span className="mt-1 block text-[11px] font-semibold text-ink/40">{conv.under}</span>
       )}
     </Link>
   );

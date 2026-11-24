@@ -14,6 +14,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { FeedProductionModule } from "./modules/feed-production/feed-production.module";
 import { FinanceModule } from "./modules/finance/finance.module";
+import { FinModule } from "./modules/fin/fin.module";
 import { HRModule } from "./modules/hr/hr.module";
 import { IdentityModule } from "./modules/identity/identity.module";
 import { QualityModule } from "./modules/quality/quality.module";
@@ -61,6 +62,7 @@ import { UploadsModule } from "./modules/uploads/uploads.module";
     InventoryModule,
     SalesModule,
     FinanceModule,
+    FinModule,
     ProcurementModule,
     MarketPlanningModule,
     EggSalesModule,

@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { FIN_PERMISSION_CATALOG } from "@jokas/shared";
 import { PrismaService } from "../../modules/prisma/prisma.service";
 
 const PERMISSIONS = [
@@ -29,6 +30,7 @@ const PERMISSIONS = [
   ["market-planning.manage", "Market Planning", "Manage market targets, MRP, and production planning"],
   ["hr.read", "HR", "View HR, worker, and task records"],
   ["hr.manage", "HR", "Manage HR, worker, and task records"],
+  ["hr.attendance.scan", "HR", "Use the attendance scanner to mark employees present from their ID card QR code"],
   ["maintenance.read", "Maintenance", "View machine and maintenance records"],
   ["maintenance.manage", "Maintenance", "Manage machine and maintenance records"],
   ["quality.read", "Quality Control", "View quality control records"],
@@ -46,7 +48,16 @@ const PERMISSIONS = [
   ["executive.read", "Executive", "Access the executive dashboard, AI assistant, AI alerts, and business intelligence reports"],
 ] as const;
 
-const ALL_KEYS = PERMISSIONS.map(([key]) => key);
+// Finance v2 ("fin.*") permissions come from the shared catalog so the API, the roles screen and the
+// web menu all agree. Same people as the legacy finance.manage get all of them (Accountant, Finance
+// Officer); the Auditor can view and export; owner-level roles get everything via ALL_KEYS.
+const ALL_PERMISSIONS: ReadonlyArray<readonly [string, string, string]> = [
+  ...PERMISSIONS,
+  ...FIN_PERMISSION_CATALOG.map(([key, description]) => [key, "Finance (new)", description] as const),
+];
+const ALL_KEYS = ALL_PERMISSIONS.map(([key]) => key);
+const FIN_KEYS = FIN_PERMISSION_CATALOG.map(([key]) => key);
+const FIN_READ_KEYS = FIN_KEYS.filter((k) => k.endsWith(".view") || k === "fin.reports.export");
 
 // System roles that must exist for every company. Added here (not only in
 // setup.service.ts) so a NEW system role rolls out to companies that were
@@ -66,6 +77,8 @@ const ALL_KEYS = PERMISSIONS.map(([key]) => key);
 // every MANAGER-level role added since).
 const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string, "MANAGER" | "OFFICER"]> = [
   ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations", "OFFICER"],
+  ["POS Cashier", "Rings up walk-in sales on a till in the finance module, and nothing else", "OFFICER"],
+  ["Attendance Scanner", "Scans employee ID cards to mark daily attendance, and nothing else", "OFFICER"],
   ["Marketer", "Submits a weekly market target for their own assigned market", "OFFICER"],
   ["Egg Sales Officer", "Records direct egg sales from an egg store", "OFFICER"],
   ["Marketing Manager", "Marketing and planning management", "MANAGER"],
@@ -101,12 +114,15 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   // ── Officer-level roles ──────────────────────────────────────────────────────
   "Storekeeper": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "soya.read", "maintenance.read", "reports.export", "ai.read", "alerts.read"],
   "Store Keeper": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "soya.read", "maintenance.read", "reports.export", "ai.read", "alerts.read"],
-  "Accountant": ["platform.read", "finance.read", "finance.manage", "feed.read", "soya.read", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read"],
-  "Finance Officer": ["platform.read", "finance.read", "finance.manage", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read"],
+  "Accountant": ["platform.read", "finance.read", "finance.manage", "feed.read", "soya.read", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read", ...FIN_KEYS],
+  // A cashier can open and close their own till and ring up sales: no ledger, no reports, no settings, no refunds or price changes.
+  "POS Cashier": ["platform.read", "fin.dashboard.view", "fin.pos.view", "fin.pos.create", "fin.pos.post"],
+  "Finance Officer": ["platform.read", "finance.read", "finance.manage", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read", ...FIN_KEYS],
   "Sales Officer": ["platform.read", "sales.read", "sales.manage", "inventory.read", "market-planning.read", "reports.export", "ai.read", "alerts.read"],
   "Procurement Officer": ["platform.read", "procurement.read", "procurement.manage", "inventory.read", "reports.export", "ai.read", "alerts.read"],
-  "HR/Admin": ["platform.read", "hr.read", "hr.manage", "identity.read", "identity.manage"],
-  "HR Officer": ["platform.read", "hr.read", "hr.manage"],
+  "HR/Admin": ["platform.read", "hr.read", "hr.manage", "hr.attendance.scan", "identity.read", "identity.manage"],
+  "HR Officer": ["platform.read", "hr.read", "hr.manage", "hr.attendance.scan"],
+  "Attendance Scanner": ["platform.read", "hr.attendance.scan"],
   "Maintenance Officer": ["platform.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read"],
   "Quality Officer": ["platform.read", "quality.read", "quality.manage", "feed.read", "soya.read", "inventory.read", "reports.export", "ai.read", "alerts.read"],
   "Quality Control Officer": ["platform.read", "quality.read", "quality.manage", "feed.read", "soya.read", "inventory.read", "reports.export", "ai.read", "alerts.read"],
@@ -138,7 +154,7 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   "Soya Processing Officer": ["platform.read", "soya.read", "inventory.read"],
 
   // ── Audit role ───────────────────────────────────────────────────────────────
-  "Auditor": ["platform.read", "identity.read", "inventory.read", "feed.read", "soya.read", "finance.read", "maintenance.read", "market-planning.read", "reports.export", "audit.read", "alerts.read"],
+  "Auditor": ["platform.read", "identity.read", "inventory.read", "feed.read", "soya.read", "finance.read", "maintenance.read", "market-planning.read", "reports.export", "audit.read", "alerts.read", ...FIN_READ_KEYS],
 };
 
 @Injectable()
@@ -161,7 +177,7 @@ export class PermissionSyncService implements OnApplicationBootstrap {
 
     for (const company of companies) {
       const upserted = await Promise.all(
-        PERMISSIONS.map(([key, module, description]) =>
+        ALL_PERMISSIONS.map(([key, module, description]) =>
           this.prisma.permission.upsert({
             where: { companyId_key: { companyId: company.id, key } },
             update: { module, description },

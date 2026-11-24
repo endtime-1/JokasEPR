@@ -20,6 +20,8 @@ const mockTx = {
   inventoryItem: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   stockBatch: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   stockMovement: { create: jest.fn() },
+  product: { findFirst: jest.fn().mockResolvedValue(null) },
+  finishedFeedStock: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null), update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   salesReturn: { update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(undefined)
 };

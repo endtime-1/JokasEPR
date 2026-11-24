@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { PageHeader } from "./ui";
 import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../lib/api";
+import { toBags, toCrates } from "../lib/units";
 
 type TrendPoint = { date: string; total?: number; good?: number; count?: number; kg?: number };
 type BatchRow = {
@@ -82,7 +83,8 @@ export function PoultryExecutivePage() {
   const yesterdayEggs = dash?.trends.eggs.at(-2)?.total ?? 0;
   const todayFeed = dash?.trends.feed.at(-1)?.kg ?? 0;
   const yesterdayFeed = dash?.trends.feed.at(-2)?.kg ?? 0;
-  const todayEggCrates = todayEggs / EGGS_PER_CRATE;
+  const eggsToday = toCrates(todayEggs);
+  const feedToday = toBags(todayFeed);
   const feedPerBird = dash && dash.summary.currentLiveBirds > 0 ? todayFeed / dash.summary.currentLiveBirds : 0;
   const feedOnHandBags = feed ? Math.round(feed.totals.onHandKg / BAG_KG) : 0;
   // rough days of cover from the last week's average daily consumption
@@ -148,20 +150,20 @@ export function PoultryExecutivePage() {
             />
             <Kpi
               label="Eggs today"
-              value={todayEggs.toLocaleString()}
-              sub={`${todayEggCrates.toLocaleString(undefined, { maximumFractionDigits: 1 })} crates`}
+              value={`${eggsToday.main} ${eggsToday.mainUnit}`}
+              sub={eggsToday.under}
               delta={trendDelta(todayEggs, yesterdayEggs, "up") ?? undefined}
             />
             <Kpi
               label="Feed used today"
-              value={`${Math.round(todayFeed).toLocaleString()} kg`}
-              sub={feedPerBird > 0 ? `${feedPerBird.toFixed(2)} kg/bird` : undefined}
+              value={`${feedToday.main} ${feedToday.mainUnit}`}
+              sub={`${feedToday.under}${feedPerBird > 0 ? ` · ${feedPerBird.toFixed(2)} kg/bird` : ""}`}
               delta={trendDelta(todayFeed, yesterdayFeed, "neutral") ?? undefined}
             />
             <Kpi
               label="Feed in store"
               value={`${feedOnHandBags.toLocaleString()} bags`}
-              sub={daysCover != null ? `~${Math.round(daysCover)} days cover` : undefined}
+              sub={feed ? `${Math.round(feed.totals.onHandKg).toLocaleString()} kg${daysCover != null ? ` · ~${Math.round(daysCover)} days cover` : ""}` : undefined}
               tone={daysCover != null && daysCover < 5 ? "critical" : "neutral"}
             />
           </div>

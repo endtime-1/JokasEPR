@@ -395,7 +395,7 @@ export class SalesService {
     }
 
     // Check stock levels — informational only, never blocks the order
-    const stockChecks = await Promise.all(dto.items.map((item) => this.availableStock(user.companyId, dto.warehouseId, item.productId)));
+    const stockChecks = await Promise.all(dto.items.map(async (item) => (await this.availableStock(user.companyId, dto.warehouseId, item.productId)) / (await this.kgPerUnit(this.prisma, item.productId))));
     const itemsWithStock = dto.items.map((item, i) => ({ item, available: stockChecks[i] }));
     const shortItems = itemsWithStock.filter(({ item, available }) => available < item.quantity);
 
@@ -730,15 +730,19 @@ export class SalesService {
     const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       for (const item of order.items) {
         const inventoryItem = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: order.warehouseId, productId: item.productId, deletedAt: null } });
+        // Feed is sold in 50 kg bags but stocked in kg — convert before checking/deducting.
+        const kgPer = await this.kgPerUnit(tx, item.productId);
+        const stockQty = Number(item.quantity) * kgPer;
         const onHand = inventoryItem ? Number(inventoryItem.quantityOnHand) : 0;
-        if (!inventoryItem || onHand < Number(item.quantity)) {
+        if (!inventoryItem || onHand < stockQty) {
           const product = productMap.get(item.productId);
           const label = product ? `${product.name} (${product.sku})` : item.productId;
           throw new BadRequestException(
-            `Not enough stock to release "${label}" from ${order.warehouse.name} — need ${Number(item.quantity)}, have ${onHand}. Stock it in, or raise a purchase request for the shortfall from this order.`
+            `Not enough stock to release "${label}" from ${order.warehouse.name} — need ${Number(item.quantity)}, have ${onHand / kgPer}. Stock it in, or raise a purchase request for the shortfall from this order.`
           );
         }
-        await this.consumeFifoTx(tx, user, inventoryItem, Number(item.quantity), "SalesOrder", order.id, `Sales release ${order.orderNumber}`);
+        await this.consumeFifoTx(tx, user, inventoryItem, stockQty, "SalesOrder", order.id, `Sales release ${order.orderNumber}`);
+        await this.consumeFinishedFeedStockTx(tx, user.companyId, order.warehouseId, item.productId, stockQty);
       }
 
       // The invoice is normally already there from confirmOrder (step 1).
@@ -803,7 +807,8 @@ export class SalesService {
       this.prisma.inventoryItem.findMany({ where: { companyId: user.companyId, warehouseId: order.warehouseId, productId: { in: productIds }, deletedAt: null }, select: { productId: true, quantityOnHand: true } })
     ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
-    const stockMap = new Map(inventoryItems.map((i) => [i.productId, Number(i.quantityOnHand)]));
+    const kgPer = new Map(await Promise.all(productIds.map(async (pid) => [pid, await this.kgPerUnit(this.prisma, pid)] as const)));
+    const stockMap = new Map(inventoryItems.map((i) => [i.productId, Number(i.quantityOnHand) / (kgPer.get(i.productId) ?? 1)]));
 
     const shortages = order.items
       .map((item) => {
@@ -1687,6 +1692,8 @@ export class SalesService {
     const product = salesReturn.product;
 
     const data = await this.prisma.$transaction(async (tx) => {
+      const kgPer = await this.kgPerUnit(tx, product.id);
+      const stockQty = quantity * kgPer;
       // C1 (DB stability audit, 2026-08-16): status was only ever checked by
       // loadPendingReturn's plain findFirst, outside this transaction — two
       // concurrent approvals (two managers, or one double-click) both passed
@@ -1708,13 +1715,14 @@ export class SalesService {
 
       const item = await tx.inventoryItem.upsert({
         where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: warehouse.id, productId: product.id } },
-        update: { deletedAt: null, quantityOnHand: { increment: quantity }, updatedById: user.id },
-        create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, productId: product.id, uomId: product.uomId, quantityOnHand: quantity, createdById: user.id }
+        update: { deletedAt: null, quantityOnHand: { increment: stockQty }, updatedById: user.id },
+        create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, productId: product.id, uomId: product.uomId, quantityOnHand: stockQty, createdById: user.id }
       });
       await tx.stockBatch.create({
-        data: { companyId: user.companyId, branchId: warehouse.branchId, farmId: warehouse.farmId, warehouseId: warehouse.id, productionSiteId: warehouse.productionSiteId, productId: product.id, inventoryItemId: item.id, uomId: product.uomId, batchNumber: `RET-${salesReturn.id.slice(0, 8).toUpperCase()}`, quantityReceived: quantity, quantityRemaining: quantity, unitCost: unitPrice, createdById: user.id }
+        data: { companyId: user.companyId, branchId: warehouse.branchId, farmId: warehouse.farmId, warehouseId: warehouse.id, productionSiteId: warehouse.productionSiteId, productId: product.id, inventoryItemId: item.id, uomId: product.uomId, batchNumber: `RET-${salesReturn.id.slice(0, 8).toUpperCase()}`, quantityReceived: stockQty, quantityRemaining: stockQty, unitCost: unitPrice / kgPer, createdById: user.id }
       });
-      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, productId: product.id, inventoryItemId: item.id, toWarehouseId: warehouse.id, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, uomId: product.uomId, movementType: "RETURN_IN", quantity, unitCost: unitPrice, referenceType: "SalesReturn", referenceId: salesReturn.id, notes: salesReturn.reason, createdById: user.id } });
+      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, productId: product.id, inventoryItemId: item.id, toWarehouseId: warehouse.id, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, uomId: product.uomId, movementType: "RETURN_IN", quantity: stockQty, unitCost: unitPrice / kgPer, referenceType: "SalesReturn", referenceId: salesReturn.id, notes: salesReturn.reason, createdById: user.id } });
+      await this.restoreFinishedFeedStockTx(tx, user.companyId, warehouse.id, product.id, stockQty);
       await this.addCustomerCreditTx(tx, salesReturn.customerId, salesReturn.branchId, salesReturn.id, totalAmount, `Sales return ${product.sku}`, true);
 
       // H-HIGH (2026-08-12): this credited the customer's overall running
@@ -1976,19 +1984,12 @@ export class SalesService {
         where: { companyId, warehouseId, productId: item.productId, deletedAt: null },
         select: { quantityOnHand: true }
       });
+      const kgFactor = await this.kgPerUnit(this.prisma, item.productId);
       const available = Number(inventoryItem?.quantityOnHand ?? 0);
-      const shortfallUnits = Math.max(0, item.quantity - available);
-      if (shortfallUnits <= 0) continue; // stock already covers this line — nothing to produce
+      const shortfallKg = Math.max(0, item.quantity * kgFactor - available);
+      if (shortfallKg <= 0) continue; // stock already covers this line — nothing to produce
 
-      // Convert quantity to kg: assume each unit = 50 kg bag unless UOM says otherwise
-      const product = await this.prisma.product.findFirst({
-        where: { id: item.productId },
-        select: { uom: { select: { symbol: true, name: true } } }
-      });
-      const uomName = (product?.uom?.name ?? "").toLowerCase();
-      const uomSymbol = (product?.uom?.symbol ?? "").toLowerCase();
-      const kgFactor = uomName.includes("50") || uomSymbol.includes("bag") ? 50 : 1;
-      const plannedQuantityKg = shortfallUnits * kgFactor;
+      const plannedQuantityKg = shortfallKg;
 
       // count+1 raced under concurrent sales orders (two requests reading the
       // same count before either insert lands) and produced a different
@@ -2009,7 +2010,7 @@ export class SalesService {
           plannedQuantityKg,
           scheduledDate: new Date(),
           status: "DRAFT",
-          notes: `Auto-generated from sales order ${salesOrderNumber} (${salesOrderId}) — shortfall ${shortfallUnits} of ${item.quantity} ordered (${available} in stock)`,
+          notes: `Auto-generated from sales order ${salesOrderNumber} (${salesOrderId}) — shortfall ${shortfallKg} kg of ${item.quantity} bags ordered (${available} kg in stock)`,
           createdById
         }
       });
@@ -2137,6 +2138,73 @@ export class SalesService {
     if (itemUpdate.count === 0) {
       throw new BadRequestException("Insufficient stock — possibly consumed concurrently. Please retry.");
     }
+  }
+
+  // Finished feed is sold in 50 kg bags but stocked in kg. Anything else: 1.
+  private async kgPerUnit(db: { product: Prisma.TransactionClient["product"] }, productId: string): Promise<number> {
+    const p = await db.product.findFirst({ where: { id: productId }, select: { feedForm: true, _count: { select: { feedFormulaFinishedProducts: true } } } });
+    return p && (p.feedForm || (p._count?.feedFormulaFinishedProducts ?? 0) > 0) ? 50 : 1;
+  }
+
+  // Finished feed is tracked twice: as a generic InventoryItem (what the sales
+  // release above consumes) and per production batch in FinishedFeedStock
+  // (what the Feed Mill's Finished Feed Inventory page and dashboards read).
+  // Feed Production's own dispatch (moveFinishedFeed) decrements both, but a
+  // regular sales-order release only touched the first, so sold feed never
+  // left the Feed Mill's finished-feed stock. Oldest batch first, floor-guarded
+  // like every other decrement. Non-feed products have no rows here (no-op);
+  // if batch rows cover less than the sale (e.g. opening stock loaded straight
+  // into inventory) we take what is there rather than block the sale.
+  private async consumeFinishedFeedStockTx(tx: Prisma.TransactionClient, companyId: string, warehouseId: string, productId: string, quantityKg: number) {
+    const rows = await tx.finishedFeedStock.findMany({
+      where: { companyId, warehouseId, productId, quantityKg: { gt: 0 }, deletedAt: null },
+      orderBy: { createdAt: "asc" }
+    });
+    if (rows.length === 0) {
+      // Feed sits in the finished-feed warehouse; releasing it from any other
+      // warehouse would leave the mill's batch stock untouched. Refuse and say
+      // where the batch stock actually is.
+      const elsewhere = await tx.finishedFeedStock.findMany({
+        where: { companyId, productId, warehouseId: { not: warehouseId }, quantityKg: { gt: 0 }, deletedAt: null },
+        select: { quantityKg: true, warehouse: { select: { name: true } } }
+      });
+      if (elsewhere.length > 0) {
+        const where = [...new Set(elsewhere.map((e) => e.warehouse.name))].join(", ");
+        throw new BadRequestException(`This feed is held in the finished-feed warehouse (${where}), not in the warehouse on this order. Change the order's warehouse to the finished-feed warehouse to release it.`);
+      }
+      return;
+    }
+    let remaining = quantityKg;
+    for (const row of rows) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, Number(row.quantityKg));
+      const left = Number(row.quantityKg) - take;
+      const updated = await tx.finishedFeedStock.updateMany({
+        where: { id: row.id, quantityKg: { gte: take } },
+        data: { quantityKg: { decrement: take }, bag50KgCount: Math.max(0, Math.floor(left / 50)) }
+      });
+      if (updated.count === 0) {
+        throw new BadRequestException("Finished feed stock was modified concurrently — please retry.");
+      }
+      remaining -= take;
+    }
+  }
+
+  // Mirror of consumeFinishedFeedStockTx for a return: put the feed back on
+  // the batch ledger. A returned bag has no production batch of its own, so it
+  // goes onto the newest batch row for that feed in this warehouse. No rows
+  // (not batch-tracked feed, or not feed at all) means nothing to restore.
+  private async restoreFinishedFeedStockTx(tx: Prisma.TransactionClient, companyId: string, warehouseId: string, productId: string, quantityKg: number) {
+    const row = await tx.finishedFeedStock.findFirst({
+      where: { companyId, warehouseId, productId, deletedAt: null },
+      orderBy: { createdAt: "desc" }
+    });
+    if (!row) return;
+    const total = Number(row.quantityKg) + quantityKg;
+    await tx.finishedFeedStock.update({
+      where: { id: row.id },
+      data: { quantityKg: { increment: quantityKg }, bag50KgCount: Math.max(0, Math.floor(total / 50)) }
+    });
   }
 
   private async addCustomerDebitTx(tx: Prisma.TransactionClient, customerId: string, branchId: string, invoiceId: string, amount: number, description: string) {

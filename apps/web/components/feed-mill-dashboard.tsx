@@ -56,6 +56,7 @@ type DashboardData = {
   openOrders: number;
   pendingQualityChecks: number;
   totalProducedKg: number;
+  producedBags?: number;
   totalFinishedKg: number;
   bag50KgCount: number;
   finishedValue: number;
@@ -448,7 +449,7 @@ export function FeedMillDashboardPage() {
 
       {/* KPI Row 1 */}
       <section className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Total Produced (all time)" value={`${fmt(data?.totalProducedKg ?? 0)} kg`} sub={`${fmt(data?.bag50KgCount ?? 0)} × 50 kg bags`} icon={Factory} color="blue" href="/feed-production/reports" />
+        <KpiCard label="Total Produced (all time)" value={`${fmt(data?.totalProducedKg ?? 0)} kg`} sub={`${fmt(data?.producedBags ?? 0)} × 50 kg bags`} icon={Factory} color="blue" href="/feed-production/reports" />
         <KpiCard label="Finished Stock" value={`${fmt(data?.totalFinishedKg ?? 0)} kg`} sub={`Value: ${fmtGhs(data?.finishedValue ?? 0)}`} icon={Warehouse} color={(data?.totalFinishedKg ?? 0) > 0 ? "green" : "default"} href="/feed-production/finished-feed-inventory" />
         <KpiCard label="Open Orders" value={String(data?.openOrders ?? 0)} sub="Draft, Approved, In Progress" icon={ClipboardList} color={(data?.openOrders ?? 0) > 0 ? "amber" : "default"} href="/feed-production/orders" />
         <KpiCard label="Attention Items" value={String(totalAlertCount)} sub={totalAlertCount > 0 ? "Requires action" : "All clear"} icon={AlertTriangle} color={totalAlertCount > 0 ? "red" : "green"} />

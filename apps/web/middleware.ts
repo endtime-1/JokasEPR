@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/setup", "/_next", "/favicon.ico", "/api/", "/brand/", "/manifest.webmanifest", "/storefront"];
+const PUBLIC_PREFIXES = ["/login", "/setup", "/_next", "/favicon.ico", "/api/", "/brand/", "/manifest.webmanifest", "/storefront", "/p/"];
+// "/p/" = customer-facing finance pages opened from an emailed or WhatsApp link (invoice and statement views). They carry an unguessable token and need no login.
 
 // (M11) A per-request nonce + 'strict-dynamic' was tried here to block inline
 // XSS payloads while letting Next's own hydration scripts run. It does NOT work

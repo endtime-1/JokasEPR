@@ -162,7 +162,7 @@ export class SoyaProcessingService {
     const cacheKey = `soya:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
     const cached = this.lookupCache.get<{ data: Record<string, unknown> }>(cacheKey);
     // The delivery list changes with every intake and processing run (kg left), so it is never cached.
-    if (cached) return { data: { ...cached.data, intakes: await this.intakeOptions(user) } };
+    if (cached) return { data: { ...cached.data, intakes: await this.intakeOptions(user), beanLots: await this.beanLotOptions(user) } };
 
     const [productionSites, warehouses, products, batches] = await Promise.all([
       this.prisma.productionSite.findMany({
@@ -191,7 +191,28 @@ export class SoyaProcessingService {
     const scopedWarehouses = await this.warehousePurpose.filterForOperation(user.companyId, warehouses, "soya.bean-intake");
     const result = { data: { productionSites, warehouses: scopedWarehouses, products, batches } };
     this.lookupCache.set(cacheKey, result);
-    return { data: { ...result.data, intakes: await this.intakeOptions(user) } };
+    return { data: { ...result.data, intakes: await this.intakeOptions(user), beanLots: await this.beanLotOptions(user) } };
+  }
+
+  // Bean stock that has no delivery record of its own (moved in by a transfer, adjusted in, or
+  // received into another store and moved on). Offered so every kg in the store can be processed.
+  private async beanLotOptions(user: AuthenticatedUser) {
+    const soyaProducts = await this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, OR: [{ name: { contains: "soy" } }, { sku: { contains: "soy" } }] }, select: { id: true } });
+    if (!soyaProducts.length) return [];
+    const lots = await this.prisma.stockBatch.findMany({
+      where: {
+        companyId: user.companyId, deletedAt: null, status: "AVAILABLE", quantityRemaining: { gt: 0 }, productId: { in: soyaProducts.map((p) => p.id) },
+        ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { warehouseId: { in: user.warehouseIds } }),
+      },
+      select: { id: true, batchNumber: true, warehouseId: true, productId: true, quantityRemaining: true, createdAt: true },
+      orderBy: { createdAt: "asc" }, take: 200,
+    });
+    const own = lots.filter((l) => !/-(OIL|CAKE)$/i.test(l.batchNumber ?? ""));
+    const receipts = [...new Set(own.map((l) => (l.batchNumber ?? "").toUpperCase()))];
+    const intakes = receipts.length ? await this.prisma.soyaBeanIntake.findMany({ where: { companyId: user.companyId, deletedAt: null, receiptNumber: { in: receipts } }, select: { receiptNumber: true, warehouseId: true, productId: true } }) : [];
+    return own
+      .filter((l) => !intakes.some((i) => i.receiptNumber.toUpperCase() === (l.batchNumber ?? "").toUpperCase() && i.warehouseId === l.warehouseId && i.productId === l.productId))
+      .map((l) => ({ id: l.id, batchNumber: l.batchNumber as string, warehouseId: l.warehouseId, productId: l.productId, remainingKg: Number(l.quantityRemaining), receivedAt: l.createdAt }));
   }
 
   // Bean deliveries for the pickers: how many kg are left in each, and whether it is on hold.
@@ -210,7 +231,7 @@ export class SoyaProcessingService {
       const lot = lots.find((l) => l.batchNumber === i.receiptNumber.toUpperCase() && l.warehouseId === i.warehouseId && l.productId === i.productId);
       const avg = Number(i.moisturePercent) > 0 ? Number(i.moisturePercent) : null;
       return {
-        id: i.id, receiptNumber: i.receiptNumber, supplierName: i.supplierName, quantityKg: i.quantityKg, productId: i.productId, receivedAt: i.receivedAt,
+        id: i.id, receiptNumber: i.receiptNumber, supplierName: i.supplierName, quantityKg: i.quantityKg, productId: i.productId, warehouseId: i.warehouseId, receivedAt: i.receivedAt,
         // null = no stock lot on record (older delivery): the form falls back to the oldest stock
         remainingKg: lot ? Number(lot.quantityRemaining) : null,
         onHold: lot ? lot.status === "QUARANTINED" : false,
@@ -576,6 +597,8 @@ export class SoyaProcessingService {
       if (!intake) throw new NotFoundException("Soya bean intake was not found.");
       if (intake.qualityStatus === "REJECTED") throw new BadRequestException(`Delivery ${intake.receiptNumber} was rejected and can't be processed.`);
       preferredReceipt = intake.receiptNumber?.toUpperCase();
+    } else if (dto.beanLotNumber) {
+      preferredReceipt = dto.beanLotNumber.toUpperCase();
     }
     const batchNumber = dto.batchNumber?.toUpperCase() ?? (await nextRef(this.prisma, user.companyId, "SPB"));
     // M10: previously always costed from the most-recently-received intake

@@ -222,6 +222,12 @@ export class InventoryController {
     return this.inventoryService.movements(user, query);
   }
 
+  @Get("stock-card")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  stockCard(@CurrentUser() user: AuthenticatedUser, @Query() query: InventoryQueryDto) {
+    return this.inventoryService.stockCard(user, query);
+  }
+
   @Get("low-stock")
   @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   lowStock(@CurrentUser() user: AuthenticatedUser) {

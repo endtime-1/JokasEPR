@@ -24,6 +24,7 @@ type Option = {
   supplierName?: string;
   piecesPerUnit?: number;
   productId?: string;
+  warehouseId?: string;
   remainingKg?: number | null;
   onHold?: boolean;
   analysisState?: string;
@@ -35,6 +36,7 @@ type SoyaOptions = {
   products: Option[];
   intakes: Option[];
   batches: Option[];
+  beanLots?: { id: string; batchNumber: string; warehouseId: string; productId: string; remainingKg: number; receivedAt?: string }[];
 };
 
 const inputClass = "min-h-11 rounded-md border border-line px-3";
@@ -310,14 +312,27 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const cakeCandidates = useMemo(() => soyaProducts(options, "CAKE"), [options]);
   // Deliveries a run can use: still has beans, not on hold, not rejected. Oldest first, because
   // that is the one to process next. A run uses ONE delivery so its oil and cake can be measured.
+  // Only deliveries sitting in the chosen Raw warehouse are offered.
   const deliveryChoices = useMemo(
     () => options.intakes
       .filter((i) => !i.onHold && i.analysisState !== "REJECTED" && (i.remainingKg == null || Number(i.remainingKg) > 0))
+      .filter((i) => !i.warehouseId || !rawWarehouseId || i.warehouseId === rawWarehouseId)
       .slice()
       .sort((a, b) => String((a as { receivedAt?: string }).receivedAt ?? "").localeCompare(String((b as { receivedAt?: string }).receivedAt ?? ""))),
-    [options]
+    [options, rawWarehouseId]
   );
-  const defaultIntake = deliveryChoices[0];
+  // Bean stock with no delivery record of its own (moved in by transfer etc.) in the chosen store.
+  const beanProductIds = useMemo(() => new Set(soyaProducts(options, "BEANS").map((p) => p.id)), [options]);
+  const lotChoices = useMemo(
+    () => (options.beanLots ?? []).filter((l) => l.warehouseId === rawWarehouseId && beanProductIds.has(l.productId) && l.remainingKg > 0),
+    [options, rawWarehouseId, beanProductIds]
+  );
+  // "" = any available beans, oldest delivery first (the next delivery follows automatically).
+  const sourceOptions: Option[] = [
+    { id: "", name: "Any available beans (oldest first)" } as Option,
+    ...deliveryChoices.map((item) => ({ id: item.id, name: `${item.receiptNumber} · ${item.supplierName}${item.remainingKg != null ? ` · ${number(item.remainingKg)} kg left` : ""}` }) as Option),
+    ...lotChoices.map((l) => ({ id: `lot:${l.batchNumber}`, name: `${l.batchNumber} · transferred stock · ${number(l.remainingKg)} kg left` }) as Option),
+  ];
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ batchNumber: "", processingDate: "", notes: "" });
   const [editError, setEditError] = useState("");
@@ -388,13 +403,20 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
     setSubmitError("");
     // Beans come from the chosen intake's own product when there is one;
     // oil/cake are picked on the form (pre-filled with the best catalog match).
-    const chosenIntakeId = form.intakeId || defaultIntake?.id || "";
+    // "" = any available beans (oldest first); an intake id; or "lot:<number>" for transferred stock.
+    const picked = sourceOptions.some((o) => o.id === form.intakeId) ? form.intakeId : "";
+    const chosenLot = picked.startsWith("lot:") ? lotChoices.find((l) => `lot:${l.batchNumber}` === picked) : undefined;
+    const chosenIntakeId = chosenLot ? "" : picked;
     const chosen = options.intakes.find((item) => item.id === chosenIntakeId);
     if (chosen && chosen.remainingKg != null && Number(form.beansUsedKg) > Number(chosen.remainingKg) + 0.0001) {
-      setSubmitError(`Delivery ${chosen.receiptNumber} has only ${number(chosen.remainingKg)} kg left. Record ${number(chosen.remainingKg)} kg as this run, and the rest as a separate run from the next delivery, so each delivery's oil and cake stay separate.`);
+      setSubmitError(`Delivery ${chosen.receiptNumber} has only ${number(chosen.remainingKg)} kg left. Record ${number(chosen.remainingKg)} kg as this run, or choose "Any available beans" to continue into the next delivery.`);
       return;
     }
-    const intakeProductId = chosen?.productId;
+    if (chosenLot && Number(form.beansUsedKg) > chosenLot.remainingKg + 0.0001) {
+      setSubmitError(`Lot ${chosenLot.batchNumber} has only ${number(chosenLot.remainingKg)} kg left. Record ${number(chosenLot.remainingKg)} kg as this run, or choose "Any available beans" to continue into the next stock.`);
+      return;
+    }
+    const intakeProductId = chosen?.productId ?? chosenLot?.productId;
     const beanProductId = intakeProductId || soyaProducts(options, "BEANS")[0]?.id || "";
     const oilProductId = form.oilProductId || oilCandidates[0]?.id || "";
     const cakeProductId = form.cakeProductId || cakeCandidates[0]?.id || "";
@@ -413,6 +435,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           oilWarehouseId,
           cakeWarehouseId,
           intakeId: chosenIntakeId || undefined,
+          beanLotNumber: chosenLot?.batchNumber,
           beanProductId,
           oilProductId,
           cakeProductId,
@@ -439,7 +462,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           <SelectField label="Raw warehouse" value={rawWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, rawWarehouseId: value })} />
           <SelectField label="Oil warehouse" value={oilWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, oilWarehouseId: value })} />
           <SelectField label="Cake warehouse" value={cakeWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, cakeWarehouseId: value })} />
-          <SelectField label="Bean delivery (this run uses only this delivery)" value={form.intakeId || defaultIntake?.id || ""} options={deliveryChoices.map((item) => ({ ...item, name: `${item.receiptNumber} · ${item.supplierName}${item.remainingKg !== null && item.remainingKg !== undefined ? ` · ${number(item.remainingKg)} kg left` : ""}` }))} onChange={(value) => setForm({ ...form, intakeId: value })} />
+          <SelectField label="Bean source" value={sourceOptions.some((o) => o.id === form.intakeId) ? form.intakeId : ""} options={sourceOptions} onChange={(value) => setForm({ ...form, intakeId: value })} />
           <SelectField label="Oil product" value={form.oilProductId || oilCandidates[0]?.id || ""} options={oilCandidates} onChange={(value) => setForm({ ...form, oilProductId: value })} />
           <SelectField label="Cake product" value={form.cakeProductId || cakeCandidates[0]?.id || ""} options={cakeCandidates} onChange={(value) => setForm({ ...form, cakeProductId: value })} />
           {[

@@ -10,6 +10,8 @@ import { ApiEnvelope, apiFetch, downloadReport, downloadRowsAsCsv, getCached, ge
 import { formatCell } from "../lib/format";
 import { useAuth } from "./auth-context";
 import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
+import { HouseEntryGrid } from "./poultry-house-entry";
+import { HOUSE_ENTRY_TYPES, type HouseEntryType } from "../lib/poultry-house-entry";
 
 // Eggs are physically collected and counted in crates on the farm, not
 // individual pieces — 1 crate = 30 eggs. Mirrors the mobile Egg Collection
@@ -1166,20 +1168,25 @@ type LedgerDayRow = {
   date: string; ageWeeks: number; opening: number; mortality: number; culls: number;
   transferIn: number; transferOut: number; adjustment: number; closing: number;
   cumulativeDeaths: number; cumulativeMortalityPct: number; eggs: number;
-  layPct: number | null; feedKg: number; feedBags: number; weightKg: number | null;
+  layPct: number | null; feedKg: number; feedBags: number; feedPerBirdG: number | null;
+  medications: string[]; weightKg: number | null;
 };
+// A weekly row; a monthly row (4 weeks = 1 month) is the same shape plus month/fromWeek/toWeek.
 type LedgerWeekRow = {
   week: number; fromDate: string; toDate: string; opening: number; mortality: number;
   culls: number; transferIn: number; transferOut: number; adjustment: number; closing: number;
   cumulativeDeaths: number; cumulativeMortalityPct: number; eggs: number; avgLayPct: number | null;
-  feedKg: number; feedBags: number; actualWeightKg: number | null; targetWeightKg: number | null;
+  feedKg: number; feedBags: number; feedPerBirdG: number | null; medications: string[];
+  actualWeightKg: number | null; targetWeightKg: number | null;
+  month?: number; fromWeek?: number; toWeek?: number;
 };
+type LedgerGranularity = "daily" | "weekly" | "monthly";
 type LedgerResponse = {
   scope: "batch" | "house" | "pen";
   scopeId: string | null;
   scopeLabel: string;
   opening: number;
-  granularity: "daily" | "weekly";
+  granularity: LedgerGranularity;
   rows: LedgerDayRow[] | LedgerWeekRow[];
 };
 
@@ -1190,10 +1197,33 @@ const transferCell = (row: { transferIn: number; transferOut: number; adjustment
   return net > 0 ? `+${n0(net)}` : n0(net);
 };
 
+// Actual weight against the breed target. Needs both figures; negative = under target.
+function weightVariance(actual: number | null | undefined, target: number | null | undefined) {
+  if (actual == null || target == null || target === 0) return null;
+  const kg = Math.round((actual - target) * 1000) / 1000;
+  return { kg, pct: Math.round((kg / target) * 1000) / 10 };
+}
+
+function VarianceCell({ variance, suffix }: { variance: number | undefined; suffix: string }) {
+  if (variance === undefined) return <td />;
+  const tone = variance < 0 ? "text-red-600" : variance > 0 ? "text-emerald-700" : "text-ink/50";
+  return <td className={`text-right ${tone}`}>{variance > 0 ? "+" : ""}{variance}{suffix}</td>;
+}
+
+// Treatments running in the period. Truncated to keep rows one line tall; the full list is in the tooltip.
+function MedicationCell({ meds }: { meds: string[] }) {
+  const text = (meds ?? []).join(", ");
+  return (
+    <td className="max-w-[14rem] truncate text-left text-[11px]" title={text || undefined}>
+      {text}
+    </td>
+  );
+}
+
 function BatchLedgerTab({ batchId, options }: { batchId: string; options: PoultryOptions }) {
   const [scope, setScope] = useState<"batch" | "house" | "pen">("batch");
   const [scopeId, setScopeId] = useState("");
-  const [granularity, setGranularity] = useState<"daily" | "weekly">("weekly");
+  const [granularity, setGranularity] = useState<LedgerGranularity>("weekly");
   const [data, setData] = useState<LedgerResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1225,19 +1255,25 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
   const inSync = !!data && data.granularity === granularity && (scope === "batch" || data.scopeId === scopeId);
   const rows = inSync ? data!.rows : [];
   const weekly = data?.granularity === "weekly";
+  const monthly = data?.granularity === "monthly";
+  const grouped = weekly || monthly; // weekly and monthly rows share one shape
 
   function downloadCsv() {
     if (!inSync || rows.length === 0) return;
     const scopeSlug = (data!.scopeLabel || "batch").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
     const name = `ledger-${scopeSlug}-${data!.granularity}-${new Date().toISOString().slice(0, 10)}.csv`;
-    const cols = weekly
+    const cols = grouped
       ? [
-          { key: "week", label: "Week" }, { key: "fromDate", label: "From" }, { key: "toDate", label: "To" },
+          monthly ? { key: "month", label: "Month" } : { key: "week", label: "Week" },
+          ...(monthly ? [{ key: "fromWeek", label: "From week" }, { key: "toWeek", label: "To week" }] : []),
+          { key: "fromDate", label: "From" }, { key: "toDate", label: "To" },
           { key: "opening", label: "Opening" }, { key: "mortality", label: "Mortality" }, { key: "culls", label: "Culls" },
           { key: "transferIn", label: "Transfer In" }, { key: "transferOut", label: "Transfer Out" }, { key: "adjustment", label: "Recount Adj" },
           { key: "closing", label: "Closing" }, { key: "cumulativeDeaths", label: "Cum Deaths" }, { key: "cumulativeMortalityPct", label: "Cum Mortality %" },
           { key: "eggs", label: "Eggs" }, { key: "avgLayPct", label: "Avg Lay %" }, { key: "feedKg", label: "Feed kg" }, { key: "feedBags", label: "Feed bags" },
+          { key: "feedPerBirdG", label: "Feed g/bird/day" }, { key: "medications", label: "Medication" },
           { key: "actualWeightKg", label: "Actual WT (kg)" }, { key: "targetWeightKg", label: "Target WT (kg)" },
+          { key: "varianceKg", label: "Variance (kg)" }, { key: "variancePct", label: "Variance %" },
         ]
       : [
           { key: "date", label: "Date" }, { key: "ageWeeks", label: "Age (wk)" },
@@ -1245,9 +1281,20 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
           { key: "transferIn", label: "Transfer In" }, { key: "transferOut", label: "Transfer Out" }, { key: "adjustment", label: "Recount Adj" },
           { key: "closing", label: "Closing" }, { key: "cumulativeDeaths", label: "Cum Deaths" }, { key: "cumulativeMortalityPct", label: "Cum Mortality %" },
           { key: "eggs", label: "Eggs" }, { key: "layPct", label: "Lay %" }, { key: "feedKg", label: "Feed kg" }, { key: "feedBags", label: "Feed bags" },
+          { key: "feedPerBirdG", label: "Feed g/bird/day" }, { key: "medications", label: "Medication" },
           { key: "weightKg", label: "Weight (kg)" },
         ];
-    downloadRowsAsCsv(name, cols, rows as Record<string, unknown>[]);
+    // Medication is a list in the data; flatten it to one cell for the CSV.
+    const csvRows = (rows as Array<Record<string, unknown>>).map((r) => {
+      const v = grouped ? weightVariance(r.actualWeightKg as number | null, r.targetWeightKg as number | null) : null;
+      return {
+        ...r,
+        medications: Array.isArray(r.medications) ? (r.medications as string[]).join("; ") : "",
+        varianceKg: v?.kg ?? "",
+        variancePct: v?.pct ?? "",
+      };
+    });
+    downloadRowsAsCsv(name, cols, csvRows);
   }
 
   return (
@@ -1281,7 +1328,7 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
         </label>
 
         <div className="flex rounded border border-line text-xs">
-          {(["daily", "weekly"] as const).map((g) => (
+          {(["daily", "weekly", "monthly"] as const).map((g) => (
             <button
               key={g}
               type="button"
@@ -1311,12 +1358,12 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
       {(loading || !inSync) && !error && <p className="text-xs text-ink/50">Rebuilding the ledger…</p>}
 
       {inSync && rows.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-left text-xs tabular-nums">
-            <thead className="bg-field">
-              <tr className="[&>th]:px-2 [&>th]:py-1.5 [&>th]:font-semibold [&>th]:uppercase [&>th]:text-[10px] [&>th]:text-ink/60">
-                <th>{weekly ? "Week" : "Date"}</th>
-                {!weekly && <th>Wk</th>}
+            <thead>
+              <tr className="[&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-field [&>th]:shadow-[0_1px_0_0_rgba(0,0,0,0.08)] [&>th]:px-2 [&>th]:py-1.5 [&>th]:font-semibold [&>th]:uppercase [&>th]:text-[10px] [&>th]:text-ink/60">
+                <th>{monthly ? "Month" : weekly ? "Week" : "Date"}</th>
+                {!grouped && <th>Wk</th>}
                 <th className="text-right">Opening</th>
                 <th className="text-right">Mort</th>
                 <th className="text-right">Cull</th>
@@ -1328,15 +1375,25 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
                 <th className="text-right">Lay %</th>
                 <th className="text-right">Feed kg</th>
                 <th className="text-right">Feed bags</th>
+                <th className="text-right" title="Grams of feed per live bird per day">Feed g/bird/day</th>
+                <th>Medication</th>
                 <th className="text-right">Actual WT</th>
-                {weekly && <th className="text-right">Target WT</th>}
+                {grouped && <th className="text-right">Target WT</th>}
+                {grouped && <th className="text-right" title="Actual weight minus target weight">Var kg</th>}
+                {grouped && <th className="text-right" title="Variance as a percentage of the target weight">Var %</th>}
               </tr>
             </thead>
             <tbody>
-              {weekly
+              {grouped
                 ? (rows as LedgerWeekRow[]).map((r) => (
-                    <tr key={r.week} className="border-t border-line [&>td]:px-2 [&>td]:py-1.5">
-                      <td>Wk {r.week}</td>
+                    <tr key={monthly ? `m${r.month}` : r.week} className="border-t border-line [&>td]:px-2 [&>td]:py-1.5">
+                      <td className="whitespace-nowrap">
+                        {monthly ? (
+                          <>Month {r.month} <span className="text-ink/40">· Wk {r.fromWeek}–{r.toWeek}</span></>
+                        ) : (
+                          <>Wk {r.week}</>
+                        )}
+                      </td>
                       <td className="text-right">{n0(r.opening)}</td>
                       <td className="text-right">{r.mortality || ""}</td>
                       <td className="text-right">{r.culls || ""}</td>
@@ -1348,12 +1405,16 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
                       <td className="text-right">{r.avgLayPct != null ? `${r.avgLayPct}%` : ""}</td>
                       <td className="text-right">{r.feedKg || ""}</td>
                       <td className="text-right">{r.feedBags || ""}</td>
+                      <td className="text-right">{r.feedPerBirdG != null ? r.feedPerBirdG : ""}</td>
+                      <MedicationCell meds={r.medications} />
                       <td className="text-right">{r.actualWeightKg != null ? r.actualWeightKg : ""}</td>
                       <td className="text-right text-ink/50">{r.targetWeightKg != null ? r.targetWeightKg : ""}</td>
+                      <VarianceCell variance={weightVariance(r.actualWeightKg, r.targetWeightKg)?.kg} suffix="" />
+                      <VarianceCell variance={weightVariance(r.actualWeightKg, r.targetWeightKg)?.pct} suffix="%" />
                     </tr>
                   ))
                 : (rows as LedgerDayRow[]).map((r) => {
-                    const quiet = !r.mortality && !r.culls && !r.transferIn && !r.transferOut && !r.adjustment && !r.eggs && !r.feedKg && r.weightKg == null;
+                    const quiet = !r.mortality && !r.culls && !r.transferIn && !r.transferOut && !r.adjustment && !r.eggs && !r.feedKg && !r.medications?.length && r.weightKg == null;
                     return (
                       <tr key={r.date} className={`border-t border-line [&>td]:px-2 [&>td]:py-1 ${quiet ? "text-ink/40" : ""}`}>
                         <td>{r.date?.slice(5) ?? ""}</td>
@@ -1369,6 +1430,8 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
                         <td className="text-right">{r.layPct != null ? `${r.layPct}%` : ""}</td>
                         <td className="text-right">{r.feedKg || ""}</td>
                         <td className="text-right">{r.feedBags || ""}</td>
+                        <td className="text-right">{r.feedPerBirdG != null ? r.feedPerBirdG : ""}</td>
+                        <MedicationCell meds={r.medications} />
                         <td className="text-right">{r.weightKg != null ? r.weightKg : ""}</td>
                       </tr>
                     );
@@ -1378,7 +1441,7 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
         </div>
       )}
       {inSync && rows.length === 0 && !loading && <p className="text-xs text-ink/50">Nothing to show for this scope yet.</p>}
-      <p className="text-[10px] text-ink/40">† = deaths (natural mortality). Rebuilt from the batch's records; a physical recount shows in the Transf column.</p>
+      <p className="text-[10px] text-ink/40">† = deaths (natural mortality). Rebuilt from the batch's records; a physical recount shows in the Transf column. Feed g/bird/day = feed used ÷ live birds (weekly and monthly use total feed ÷ total bird-days). A month = 4 weeks.</p>
     </div>
   );
 }
@@ -2241,7 +2304,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
         </div>
       )}
       {recordsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{recordsError}</p>}
-      <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} saving={saving} />
+      <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} saving={saving} records={rows} endpoint={endpoint} onHouseSaved={() => { load().catch(() => undefined); }} />
       <div className="mt-6 mb-2 flex flex-wrap items-center gap-3">
         <h3 className="text-sm font-semibold text-ink/70">Records{rows.length ? ` (${rows.length})` : ""}</h3>
         {canManage && pendingCount > 0 && (
@@ -2278,7 +2341,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   );
 }
 
-function GenericRecordForm({ options, optionsLoading = false, form, setForm, submit, type, isEditing = false, saving = false }: {
+function GenericRecordForm({ options, optionsLoading = false, form, setForm, submit, type, isEditing = false, saving = false, records = [], endpoint = "", onHouseSaved }: {
   options: PoultryOptions;
   optionsLoading?: boolean;
   form: Record<string, string>;
@@ -2287,8 +2350,14 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   type: string;
   isEditing?: boolean;
   saving?: boolean;
+  records?: Record<string, any>[];
+  endpoint?: string;
+  onHouseSaved?: () => void;
 }) {
   const fields = recordFields(type, isEditing);
+  // Egg, Feed and Mortality: once a house is chosen (and Pen is left on "all pens"), every pen of that house is
+  // shown as its own small form, so a whole house is recorded and saved in one go instead of pen after pen.
+  const houseMode = HOUSE_ENTRY_TYPES.includes(type) && !isEditing && !!form.poultryHouseId && !form.penId;
   // Poultry consumes finished feed only — never raw ingredients or eggs/birds.
   const feedPickerProducts = options.feedProducts?.length ? options.feedProducts : options.products;
   // Crates is a data-entry convenience only — the real field submitted
@@ -2365,7 +2434,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   }, [options, form.flockBatchId, form.poultryHouseId]);
 
   return (
-    <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+    <form onSubmit={houseMode ? (event) => event.preventDefault() : submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
       <FormField label="Flock batch" hint="Also filters the records list below — leave unselected to see every batch">
         <select
           name="flockBatchId"
@@ -2373,7 +2442,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
           value={form.flockBatchId}
           onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, poultryHouseId: "", penId: "", ...warehouseDefaultsForBatch(e.target.value) })}
           disabled={optionsLoading && options.batches.length === 0}
-          required
+          required={!houseMode}
         >
           {optionsLoading && options.batches.length === 0
             ? <option value="">Loading batches…</option>
@@ -2412,7 +2481,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </select>
       </FormField>
 
-      {type === "feed" && (
+      {type === "feed" && !houseMode && (
         <>
           <FormField label="Feed product">
             <select name="feedProductId" className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
@@ -2429,7 +2498,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </>
       )}
 
-      {type === "mortality" && (
+      {type === "mortality" && !houseMode && (
         <FormField label="Reason">
           <select name="isCulling" className={inputClass} value={form.isCulling ?? "false"} onChange={(e) => setForm({ ...form, isCulling: e.target.value })}>
             <option value="false">Death</option>
@@ -2477,7 +2546,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </>
       )}
 
-      {type === "eggs" && (
+      {type === "eggs" && !houseMode && (
         <>
           <FormField label={`Crates collected (1 crate = ${EGGS_PER_CRATE} eggs, optional)`}>
             <input type="number" min="0" step="1" className={inputClass} placeholder="e.g. 140" value={crates} onChange={(e) => handleCratesChange(e.target.value, "goodEggs")} />
@@ -2540,7 +2609,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </>
       )}
 
-      {fields.map((field) => (
+      {fields.filter((field) => !houseMode || field.name === "recordDate").map((field) => (
         <FormField key={field.name} label={field.label}>
           {field.kind === "select" ? (
             <select name={field.name} className={inputClass} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })}>
@@ -2552,8 +2621,25 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </FormField>
       ))}
 
+      {houseMode && (
+        <div className="md:col-span-4">
+          <HouseEntryGrid
+            key={`${type}:${form.poultryHouseId}`}
+            type={type as HouseEntryType}
+            endpoint={endpoint}
+            houseId={form.poultryHouseId}
+            batchId={form.flockBatchId}
+            recordDate={form.recordDate}
+            options={options}
+            defaultsForBatch={warehouseDefaultsForBatch}
+            records={records}
+            onSaved={onHouseSaved ?? (() => undefined)}
+          />
+        </div>
+      )}
       <button
         type="submit"
+        hidden={houseMode}
         disabled={saving}
         className={`min-h-11 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 md:col-span-4 ${isEditing ? "bg-amber-600" : "bg-brand"}`}
       >

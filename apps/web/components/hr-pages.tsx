@@ -7,6 +7,7 @@ import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, Dollar
 import { ApiEnvelope, apiFetch, apiFetchResponse, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { DataTable } from "./data-table";
 import { StatusBadge, EmptyState, ConfirmModal } from "./ui";
+import { EmployeeIdCardTab } from "./employee-id-card";
 import { useApiRecovery } from "../lib/use-api-recovery";
 import { useLatestRequest } from "../lib/use-latest-request";
 
@@ -997,7 +998,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   const [tab, setTab] = useState(() => {
     if (typeof window !== "undefined") {
       const t = new URLSearchParams(window.location.search).get("tab");
-      if (t && ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance"].includes(t)) return t;
+      if (t && ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance", "id card"].includes(t)) return t;
     }
     return "overview";
   });
@@ -1119,7 +1120,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
     }
   }
 
-  const tabs = ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance"];
+  const tabs = ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance", "id card"];
 
   return (
     
@@ -1325,6 +1326,8 @@ export function EmployeeDetailPage({ id }: { id: string }) {
             empty="No attendance records"
           />
         )}
+
+        {tab === "id card" && <EmployeeIdCardTab id={id} />}
 
         {tab === "tasks" && (
           <DataTable

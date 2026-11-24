@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser, WarehouseOperation, standardWeightKg } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
-import { buildDailyLedger, bucketWeekly } from "./batch-ledger.util";
+import { buildDailyLedger, bucketWeekly, bucketMonthly } from "./batch-ledger.util";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
@@ -696,7 +696,7 @@ export class PoultryService {
     const scope = query.scope ?? "batch";
     const granularity = query.granularity ?? "daily";
 
-    const [mortality, eggRows, feedRows, weightRows, transfers, countAdjustments] = await Promise.all([
+    const [mortality, eggRows, feedRows, weightRows, transfers, countAdjustments, medicationRows] = await Promise.all([
       this.prisma.mortalityRecord.findMany({
         where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
         select: { recordDate: true, birdCount: true, isCulling: true },
@@ -725,6 +725,10 @@ export class PoultryService {
       this.prisma.poultryCountAdjustment.findMany({
         where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
         select: { adjustmentDate: true, delta: true },
+      }),
+      this.prisma.medicationRecord.findMany({
+        where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
+        select: { medicationName: true, dosage: true, startDate: true, endDate: true },
       }),
     ]);
 
@@ -786,7 +790,18 @@ export class PoultryService {
       eggs: eggRows.map((e) => ({ date: e.recordDate, count: e.goodEggs + e.crackedEggs + e.dirtyEggs + e.brokenEggs + e.rejectedEggs })),
       feedKg: feedRows.map((f) => ({ date: f.recordDate, kg: Number(f.quantityKg) })),
       weights: weightRows.map((w) => ({ date: w.recordDate, averageWeightKg: Number(w.averageWeightKg) })),
+      medications: medicationRows.map((m) => ({
+        startDate: m.startDate,
+        endDate: m.endDate,
+        label: m.medicationName,
+      })),
     });
+
+    const targetWt = (wk: number) => standardWeightKg(batch.birdType, wk);
+    const rows =
+      granularity === "weekly" ? bucketWeekly(days, targetWt)
+      : granularity === "monthly" ? bucketMonthly(days, targetWt)
+      : days;
 
     return {
       data: {
@@ -798,7 +813,7 @@ export class PoultryService {
         granularity,
         houses: [...new Map(batch.penAllocations.map((a) => [a.poultryHouseId, a.poultryHouseId])).keys()],
         pens: batch.penAllocations.map((a) => ({ id: a.penId, houseId: a.poultryHouseId, label: a.pen?.code ?? "Pen", name: a.pen?.name ?? null })),
-        rows: granularity === "weekly" ? bucketWeekly(days, (wk) => standardWeightKg(batch.birdType, wk)) : days,
+        rows,
       },
     };
   }

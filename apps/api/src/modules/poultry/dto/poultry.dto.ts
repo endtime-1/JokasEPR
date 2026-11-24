@@ -64,8 +64,8 @@ export class BatchLedgerQueryDto {
   scopeId?: string;
 
   @IsOptional()
-  @IsIn(["daily", "weekly"])
-  granularity?: "daily" | "weekly";
+  @IsIn(["daily", "weekly", "monthly"])
+  granularity?: "daily" | "weekly" | "monthly";
 }
 
 export class CreatePoultryHouseDto {

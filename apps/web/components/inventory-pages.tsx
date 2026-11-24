@@ -13,6 +13,7 @@ import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedF
 import { useApiRecovery } from "../lib/use-api-recovery";
 import { useLatestRequest } from "../lib/use-latest-request";
 import { useAuth } from "./auth-context";
+import { WarehouseStockLedger } from "./inventory-stock-ledger";
 
 type Option = {
   id: string;
@@ -882,7 +883,7 @@ export function WarehouseDetailPage() {
   const [data, setData] = useState<WarehouseDetail | null>(() => getCachedFirst<ApiEnvelope<WarehouseDetail>>(`/inventory/warehouses/${id}`)?.data ?? null);
   const [loading, setLoading] = useState(!hasCached(`/inventory/warehouses/${id}`));
   const [loadError, setLoadError] = useState("");
-  const [tab, setTab] = useState<"onhand" | "daily" | "activity">("daily");
+  const [tab, setTab] = useState<"ledger" | "onhand" | "daily" | "activity">("ledger");
 
   function load() {
     setLoadError("");
@@ -958,25 +959,29 @@ export function WarehouseDetailPage() {
       </div>
 
       <div className="mb-2 flex gap-1 border-b border-line">
-        {(["onhand", "daily", "activity"] as const).map((t) => (
+        {(["ledger", "onhand", "daily", "activity"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${tab === t ? "border-brand text-brand" : "border-transparent text-ink/55 hover:text-ink"}`}
           >
-            {t === "onhand" ? "What's in stock now" : t === "daily" ? "Day by day" : "Every entry"}
+            {t === "ledger" ? "Product ledger" : t === "onhand" ? "What's in stock now" : t === "daily" ? "Day by day" : "Every entry"}
           </button>
         ))}
       </div>
       <p className="mb-4 text-xs text-ink/55">
-        {tab === "onhand"
+        {tab === "ledger"
+          ? "Pick a product on the left to see how it came in, how it went out, and the balance left after every line."
+          : tab === "onhand"
           ? "The quantity of each product sitting in this store right now."
           : tab === "daily"
             ? "One line per day — how much was collected or received, how much left, and the balance left in the store after that day."
             : "The full log: every single receipt and issue, most recent first. Use the dates to narrow it."}
       </p>
 
-      {tab === "onhand" ? (
+      {tab === "ledger" ? (
+        <WarehouseStockLedger warehouseId={id} />
+      ) : tab === "onhand" ? (
         <InventoryItemsTable rows={data?.items ?? []} loading={loading} />
       ) : tab === "daily" ? (
         <>

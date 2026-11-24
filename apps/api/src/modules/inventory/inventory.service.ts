@@ -7,6 +7,7 @@ import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
 import { startOfTodayAccra } from "../../common/utils/timezone";
 import { withDbRetry } from "../../common/db-retry";
+import { buildStockCard } from "./stock-card.util";
 import {
   AdjustmentQueryDto,
   ApproveStockDto,
@@ -729,6 +730,84 @@ export class InventoryService {
 
   async movements(user: AuthenticatedUser, query: InventoryQueryDto) {
     return { data: await this.prisma.stockMovement.findMany({ where: this.movementWhere(user, query), include: { product: { include: { uom: { select: { symbol: true, name: true } } } }, warehouse: true, fromWarehouse: true, toWarehouse: true, stockBatch: true }, orderBy: { movementDate: "desc" }, take: 300 }) };
+  }
+
+  /**
+   * Stock card for one product in one store: every receipt and issue in date
+   * order with the balance after each line, ending on the store's real stock on
+   * hand. Optional startDate/endDate narrow the lines shown (the balance still
+   * carries forward correctly).
+   */
+  async stockCard(user: AuthenticatedUser, query: InventoryQueryDto) {
+    if (!query.productId || !query.warehouseId) throw new BadRequestException("Choose a product and a store to see its ledger.");
+    this.assertWarehouseAccess(user, query.warehouseId);
+    const { productId, warehouseId } = query;
+    const [product, warehouse, item, rows] = await Promise.all([
+      this.prisma.product.findFirst({ where: { id: productId, companyId: user.companyId, deletedAt: null }, select: { id: true, sku: true, name: true, uom: { select: { symbol: true, name: true } } } }),
+      this.prisma.warehouse.findFirst({ where: { id: warehouseId, companyId: user.companyId, deletedAt: null }, select: { id: true, name: true } }),
+      this.prisma.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId, productId, deletedAt: null }, select: { quantityOnHand: true } }),
+      this.prisma.stockMovement.findMany({
+        where: { companyId: user.companyId, deletedAt: null, productId, OR: [{ warehouseId }, { fromWarehouseId: warehouseId }, { toWarehouseId: warehouseId }] },
+        select: {
+          id: true, movementDate: true, createdAt: true, movementType: true, quantity: true,
+          warehouseId: true, fromWarehouseId: true, toWarehouseId: true,
+          referenceType: true, referenceId: true, notes: true,
+          stockBatch: { select: { batchNumber: true } }, createdBy: { select: { fullName: true } },
+        },
+        orderBy: [{ movementDate: "asc" }, { createdAt: "asc" }],
+      }),
+    ]);
+    if (!product) throw new NotFoundException("Product was not found.");
+    if (!warehouse) throw new NotFoundException("Store was not found.");
+
+    // Turn each movement's document id into something people recognise: order / batch / adjustment /
+    // transfer number and customer for the mill, the flock and house for feed given to birds.
+    const idsFor = (type: string) => [...new Set(rows.filter((m) => m.referenceType === type && m.referenceId).map((m) => m.referenceId as string))];
+    const scope = { companyId: user.companyId };
+    const flockHouse = (r: { flockBatch: { code: string } | null; poultryHouse: { name: string } | null; pen?: { code: string } | null }) =>
+      ({ reference: r.flockBatch ? `Flock ${r.flockBatch.code}` : "", party: [r.poultryHouse?.name, r.pen?.code ? `Pen ${r.pen.code}` : null].filter(Boolean).join(" · ") || null });
+    const [orders, batches, adjustments, transfers, feedRecords, medRecords, vacRecords] = await Promise.all([
+      idsFor("SalesOrder").length ? this.prisma.salesOrder.findMany({ where: { ...scope, id: { in: idsFor("SalesOrder") } }, select: { id: true, orderNumber: true, customer: { select: { name: true } } } }) : [],
+      idsFor("FeedProductionBatch").length ? this.prisma.feedProductionBatch.findMany({ where: { ...scope, id: { in: idsFor("FeedProductionBatch") } }, select: { id: true, batchNumber: true } }) : [],
+      idsFor("StockAdjustment").length ? this.prisma.stockAdjustment.findMany({ where: { ...scope, id: { in: idsFor("StockAdjustment") } }, select: { id: true, adjustmentNumber: true } }) : [],
+      idsFor("StockTransfer").length ? this.prisma.stockTransfer.findMany({ where: { ...scope, id: { in: idsFor("StockTransfer") } }, select: { id: true, transferNumber: true } }) : [],
+      idsFor("FeedConsumptionRecord").length ? this.prisma.feedConsumptionRecord.findMany({ where: { ...scope, id: { in: idsFor("FeedConsumptionRecord") } }, select: { id: true, recordDate: true, flockBatch: { select: { code: true } }, poultryHouse: { select: { name: true } }, pen: { select: { code: true } } } }) : [],
+      idsFor("MedicationRecord").length ? this.prisma.medicationRecord.findMany({ where: { ...scope, id: { in: idsFor("MedicationRecord") } }, select: { id: true, startDate: true, medicationName: true, flockBatch: { select: { code: true } }, poultryHouse: { select: { name: true } }, pen: { select: { code: true } } } }) : [],
+      idsFor("VaccinationRecord").length ? this.prisma.vaccinationRecord.findMany({ where: { ...scope, id: { in: idsFor("VaccinationRecord") } }, select: { id: true, vaccinationDate: true, vaccineName: true, flockBatch: { select: { code: true } }, poultryHouse: { select: { name: true } }, pen: { select: { code: true } } } }) : [],
+    ]);
+    const ref = new Map<string, { reference: string; party: string | null }>();
+    // Lines stay in the order the system recorded them (so a running balance can never dip below what the
+    // system allowed at the time). The day the stock was really used is shown in the details instead.
+    const dmy = (d: Date) => d.toISOString().slice(0, 10).split("-").reverse().join("/");
+    for (const o of orders) ref.set(o.id, { reference: o.orderNumber, party: o.customer?.name ?? null });
+    for (const b of batches) ref.set(b.id, { reference: b.batchNumber, party: null });
+    for (const a of adjustments) ref.set(a.id, { reference: a.adjustmentNumber, party: null });
+    for (const t of transfers) ref.set(t.id, { reference: t.transferNumber, party: null });
+    for (const f of feedRecords) { const fh = flockHouse(f); ref.set(f.id, { reference: fh.reference, party: [fh.party, `fed ${dmy(f.recordDate)}`].filter(Boolean).join(" · ") }); }
+    for (const m of medRecords) { const fh = flockHouse(m); ref.set(m.id, { reference: fh.reference, party: [m.medicationName, fh.party, `given ${dmy(m.startDate)}`].filter(Boolean).join(" · ") }); }
+    for (const v of vacRecords) { const fh = flockHouse(v); ref.set(v.id, { reference: fh.reference, party: [v.vaccineName, fh.party, `given ${dmy(v.vaccinationDate)}`].filter(Boolean).join(" · ") }); }
+
+    const card = buildStockCard({
+      warehouseId,
+      onHand: Number(item?.quantityOnHand ?? 0),
+      movements: rows.map((m) => ({
+        id: m.id, movementDate: m.movementDate, createdAt: m.createdAt, movementType: m.movementType, quantity: Number(m.quantity),
+        warehouseId: m.warehouseId, fromWarehouseId: m.fromWarehouseId, toWarehouseId: m.toWarehouseId,
+        referenceType: m.referenceType, referenceId: m.referenceId, notes: m.notes,
+        lot: m.stockBatch?.batchNumber ?? null, by: m.createdBy?.fullName ?? null,
+      })),
+      from: query.startDate ? query.startDate.slice(0, 10) : null,
+      to: query.endDate ? query.endDate.slice(0, 10) : null,
+    });
+
+    return {
+      data: {
+        product: { id: product.id, sku: product.sku, name: product.name, uom: product.uom?.symbol ?? product.uom?.name ?? "" },
+        warehouse: { id: warehouse.id, name: warehouse.name },
+        summary: card.summary,
+        lines: card.lines.map((l) => ({ ...l, reference: (l.referenceId && ref.get(l.referenceId)?.reference) || null, party: (l.referenceId && ref.get(l.referenceId)?.party) || null })),
+      },
+    };
   }
 
   async lowStock(user: AuthenticatedUser) {

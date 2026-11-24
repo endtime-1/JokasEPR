@@ -19,6 +19,7 @@ const HR_GROUPS: ModuleNavGroup[] = [
     label: "Time & leave", icon: CalendarClock,
     items: [
       { href: "/hr/attendance", label: "Attendance" },
+      { href: "/hr/attendance/scan", label: "Scan card" },
       { href: "/hr/shifts", label: "Shifts" },
       { href: "/hr/leave-requests", label: "Leave requests" },
       { href: "/hr/leave-balance", label: "Leave balance" },
