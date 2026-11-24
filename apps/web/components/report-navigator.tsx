@@ -122,6 +122,14 @@ export function ReportNavigatorPage() {
     <div>
       <PageHeader title="Reports" description="Drill to a farm, house or batch and pull the report for exactly that." />
 
+      <Link href="/reports/egg-analysis" className="app-card mb-5 flex flex-wrap items-center gap-3 px-5 py-4 transition hover:border-brand/40">
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-ink">Egg analysis: farm to head office</p>
+          <p className="text-sm text-ink/60">Where every crate went, what is missing and why. Download it as Excel for the owner.</p>
+        </div>
+        <span className="text-sm font-semibold text-brand">Open</span>
+      </Link>
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {MODULES.map((m) => (
           <button
